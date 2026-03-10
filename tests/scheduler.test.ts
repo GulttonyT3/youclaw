@@ -1183,56 +1183,119 @@ describe('Scheduler.runManually', () => {
   })
 })
 
-// ===== EventBus 推送 =====
+// ===== Delivery 投递 =====
 
-describe('Scheduler.executeTask — EventBus 推送', () => {
+describe('Scheduler.executeTask — Delivery 投递', () => {
   beforeEach(() => {
     cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs')
     mockEventBus.emit.mockClear()
   })
 
-  test('成功执行后通过 EventBus 发送 complete 事件', async () => {
+  test('delivery_mode=push 时通过 EventBus 投递到 delivery_target', async () => {
     createTask({
-      id: 'evt-1',
-      agentId: 'agent-evt',
-      chatId: 'task:evt-1',
-      prompt: 'test',
+      id: 'dlv-1',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-1',
+      prompt: '投递测试',
       scheduleType: 'interval',
       scheduleValue: '60000',
       nextRun: new Date(Date.now() - 1000).toISOString(),
+      name: '日报',
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:123456',
     })
 
-    const mockQueue = { enqueue: mock(() => Promise.resolve('事件结果')) } as any
+    const mockQueue = { enqueue: mock(() => Promise.resolve('投递结果')) } as any
     const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
-    await scheduler.executeTask(getTask('evt-1')!)
+    await scheduler.executeTask(getTask('dlv-1')!)
 
     expect(mockEventBus.emit).toHaveBeenCalledTimes(1)
     const emittedEvent = mockEventBus.emit.mock.calls[0][0]
     expect(emittedEvent.type).toBe('complete')
-    expect(emittedEvent.agentId).toBe('agent-evt')
-    expect(emittedEvent.chatId).toBe('task:evt-1')
-    expect(emittedEvent.fullText).toBe('事件结果')
-    expect(emittedEvent.sessionId).toBe('task:evt-1')
+    expect(emittedEvent.agentId).toBe('agent-dlv')
+    expect(emittedEvent.chatId).toBe('tg:123456')
+    expect(emittedEvent.fullText).toContain('[Task: 日报]')
+    expect(emittedEvent.fullText).toContain('投递结果')
+
+    // run log 记录 delivery_status
+    const logs = getTaskRunLogs('dlv-1')
+    expect(logs[0].delivery_status).toBe('sent')
   })
 
-  test('执行失败时不发送 EventBus 事件', async () => {
+  test('delivery_mode=none 时不调用 EventBus', async () => {
     createTask({
-      id: 'evt-2',
-      agentId: 'agent-evt',
-      chatId: 'task:evt-2',
+      id: 'dlv-2',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-2',
       prompt: 'test',
       scheduleType: 'interval',
       scheduleValue: '60000',
       nextRun: new Date(Date.now() - 1000).toISOString(),
     })
 
-    const mockQueue = { enqueue: mock(() => Promise.reject(new Error('fail'))) } as any
+    const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
     const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
-    await scheduler.executeTask(getTask('evt-2')!)
+    await scheduler.executeTask(getTask('dlv-2')!)
 
     expect(mockEventBus.emit).not.toHaveBeenCalled()
+
+    const logs = getTaskRunLogs('dlv-2')
+    expect(logs[0].delivery_status).toBe('skipped')
+  })
+
+  test('执行失败时 delivery_status=skipped', async () => {
+    createTask({
+      id: 'dlv-3',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-3',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:123456',
+    })
+
+    const mockQueue = { enqueue: mock(() => Promise.reject(new Error('err'))) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('dlv-3')!)
+
+    // 失败时不投递
+    expect(mockEventBus.emit).not.toHaveBeenCalled()
+    const logs = getTaskRunLogs('dlv-3')
+    expect(logs[0].delivery_status).toBe('skipped')
+  })
+
+  test('delivery emit 异常时 delivery_status=failed 但任务不失败', async () => {
+    createTask({
+      id: 'dlv-4',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-4',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:999',
+    })
+
+    // emit 抛异常
+    const failEventBus = { emit: mock(() => { throw new Error('channel down') }) } as any
+    const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, failEventBus)
+
+    await scheduler.executeTask(getTask('dlv-4')!)
+
+    // 任务本身应该成功（best-effort 投递）
+    const task = getTask('dlv-4')!
+    expect(task.consecutive_failures).toBe(0)
+
+    const logs = getTaskRunLogs('dlv-4')
+    expect(logs[0].status).toBe('success')
+    expect(logs[0].delivery_status).toBe('failed')
   })
 })
 
