@@ -172,13 +172,14 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
     }
 
     const runAt = new Date().toISOString()
+    const runId = crypto.randomUUID().slice(0, 8)
     try {
       const result = await agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
 
       // 保存执行结果到 messages 表
       const timestamp = new Date().toISOString()
       saveMessage({
-        id: `${task.id}-${runAt}-user`,
+        id: `${task.id}-${runId}-user`,
         chatId: task.chat_id,
         sender: 'manual',
         senderName: 'Manual Run',
@@ -188,7 +189,7 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
         isBotMessage: false,
       })
       saveMessage({
-        id: `${task.id}-${runAt}-bot`,
+        id: `${task.id}-${runId}-bot`,
         chatId: task.chat_id,
         sender: task.agent_id,
         senderName: task.agent_id,
