@@ -1,0 +1,186 @@
+import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { cleanTables } from './setup.ts'
+import { getChats, getMessages } from '../src/db/index.ts'
+import { EventBus } from '../src/events/bus.ts'
+import { MessageRouter } from '../src/channel/router.ts'
+import type { InboundMessage, Channel } from '../src/channel/types.ts'
+
+function createMessage(overrides: Partial<InboundMessage> = {}): InboundMessage {
+  return {
+    id: 'msg-1',
+    chatId: 'web:chat-1',
+    sender: 'user',
+    senderName: 'Alice',
+    content: 'hello',
+    timestamp: '2026-03-10T10:00:00.000Z',
+    isGroup: false,
+    ...overrides,
+  }
+}
+
+function createManagedAgent(configOverrides: Record<string, unknown> = {}) {
+  return {
+    config: {
+      id: 'agent-1',
+      name: 'Agent One',
+      model: 'claude-sonnet-4-6',
+      workspaceDir: '/tmp/agent-1',
+      ...configOverrides,
+    },
+    workspaceDir: '/tmp/agent-1',
+    runtime: {},
+    state: {},
+  }
+}
+
+function createChannel(overrides: Partial<Channel> = {}): Channel {
+  return {
+    name: 'mock',
+    connect: async () => {},
+    sendMessage: async () => {},
+    isConnected: () => true,
+    ownsChatId: () => false,
+    disconnect: async () => {},
+    ...overrides,
+  }
+}
+
+describe('MessageRouter.handleInbound', () => {
+  beforeEach(() => cleanTables('messages', 'chats'))
+
+  test('无匹配 agent 时忽略消息', async () => {
+    const resolveAgent = mock(() => undefined)
+    const enqueue = mock(() => Promise.resolve('unused'))
+    const router = new MessageRouter(
+      { resolveAgent } as any,
+      { enqueue } as any,
+      new EventBus(),
+    )
+
+    await router.handleInbound(createMessage())
+
+    expect(resolveAgent).toHaveBeenCalledTimes(1)
+    expect(enqueue).toHaveBeenCalledTimes(0)
+    expect(getMessages('web:chat-1', 10)).toEqual([])
+    expect(getChats()).toEqual([])
+  })
+
+  test('群聊未命中 trigger 时不会入队或写库', async () => {
+    const enqueue = mock(() => Promise.resolve('unused'))
+    const router = new MessageRouter(
+      {
+        resolveAgent: () => createManagedAgent({ trigger: '^@bot', requiresTrigger: true }),
+      } as any,
+      { enqueue } as any,
+      new EventBus(),
+    )
+
+    await router.handleInbound(createMessage({
+      chatId: 'tg:group-1',
+      isGroup: true,
+      content: '普通群消息',
+    }))
+
+    expect(enqueue).toHaveBeenCalledTimes(0)
+    expect(getMessages('tg:group-1', 10)).toEqual([])
+    expect(getChats()).toEqual([])
+  })
+
+  test('自动解析 skill 调用，保存消息，并记录 daily log', async () => {
+    const enqueue = mock(() => Promise.resolve('router reply'))
+    const appendDailyLog = mock(() => {})
+    const loadAllSkills = mock(() => [
+      { name: 'pdf' },
+      { name: 'agent-browser' },
+    ])
+    const router = new MessageRouter(
+      {
+        resolveAgent: () => createManagedAgent(),
+      } as any,
+      { enqueue } as any,
+      new EventBus(),
+      { appendDailyLog } as any,
+      { loadAllSkills } as any,
+    )
+
+    await router.handleInbound(createMessage({
+      content: '/pdf /agent-browser summarize report',
+    }))
+
+    expect(loadAllSkills).toHaveBeenCalledTimes(1)
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    expect(enqueue.mock.calls[0]?.[0]).toBe('agent-1')
+    expect(enqueue.mock.calls[0]?.[1]).toBe('web:chat-1')
+    expect(enqueue.mock.calls[0]?.[2]).toBe('summarize report')
+    expect(enqueue.mock.calls[0]?.[3]).toEqual(['pdf', 'agent-browser'])
+    expect(appendDailyLog).toHaveBeenCalledWith(
+      'agent-1',
+      'web:chat-1',
+      '/pdf /agent-browser summarize report',
+      'router reply',
+    )
+
+    const chats = getChats()
+    const messages = getMessages('web:chat-1', 10)
+    expect(chats.length).toBe(1)
+    expect(chats[0]?.name).toBe('Alice')
+    expect(chats[0]?.channel).toBe('web')
+    expect(messages.length).toBe(2)
+    expect(messages.some((message) => message.content === '/pdf /agent-browser summarize report')).toBe(true)
+    expect(messages.some((message) => message.content === 'router reply')).toBe(true)
+  })
+
+  test('显式 requestedSkills 优先，不再重新解析前缀', async () => {
+    const enqueue = mock(() => Promise.resolve('ok'))
+    const loadAllSkills = mock(() => [{ name: 'pdf' }])
+    const router = new MessageRouter(
+      {
+        resolveAgent: () => createManagedAgent(),
+      } as any,
+      { enqueue } as any,
+      new EventBus(),
+      undefined,
+      { loadAllSkills } as any,
+    )
+
+    await router.handleInbound(createMessage({
+      content: '/pdf keep raw content',
+      requestedSkills: ['explicit-skill'],
+    }))
+
+    expect(loadAllSkills).toHaveBeenCalledTimes(0)
+    expect(enqueue.mock.calls[0]?.[2]).toBe('/pdf keep raw content')
+    expect(enqueue.mock.calls[0]?.[3]).toEqual(['explicit-skill'])
+  })
+})
+
+describe('MessageRouter complete 事件出站', () => {
+  test('只向拥有 chatId 的 channel 发送完成消息', async () => {
+    const eventBus = new EventBus()
+    const firstSend = mock(() => Promise.resolve())
+    const secondSend = mock(() => Promise.resolve())
+    const router = new MessageRouter(
+      { resolveAgent: () => createManagedAgent() } as any,
+      { enqueue: mock(() => Promise.resolve('unused')) } as any,
+      eventBus,
+    )
+
+    router.addChannel(createChannel({
+      name: 'first',
+      ownsChatId: () => false,
+      sendMessage: firstSend,
+    }))
+    router.addChannel(createChannel({
+      name: 'second',
+      ownsChatId: (chatId) => chatId === 'tg:1',
+      sendMessage: secondSend,
+    }))
+
+    eventBus.emit({ type: 'complete', agentId: 'agent-1', chatId: 'tg:1', fullText: 'done', sessionId: 'session-1' })
+    await Promise.resolve()
+
+    expect(firstSend).toHaveBeenCalledTimes(0)
+    expect(secondSend).toHaveBeenCalledTimes(1)
+    expect(secondSend).toHaveBeenCalledWith('tg:1', 'done')
+  })
+})
