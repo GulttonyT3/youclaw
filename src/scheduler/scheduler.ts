@@ -156,24 +156,19 @@ export class Scheduler {
       const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
       const durationMs = Date.now() - startMs
 
+      // 保存执行结果到 messages 表，使 Chat 页面可见
+      this.saveTaskMessages(task, runAt, result ?? '(no output)')
+
+      // 投递到外部 channel（best-effort）
+      const deliveryStatus = this.deliver(task, result ?? '(no output)')
+
       saveTaskRunLog({
         taskId: task.id,
         runAt,
         durationMs,
         status: 'success',
         result,
-      })
-
-      // 保存执行结果到 messages 表，使 Chat 页面可见
-      this.saveTaskMessages(task, runAt, result ?? '(no output)')
-
-      // 通过 EventBus 推送结果到 channel（Telegram/Web 等）
-      this.eventBus.emit({
-        type: 'complete',
-        agentId: task.agent_id,
-        chatId: task.chat_id,
-        fullText: result ?? '(no output)',
-        sessionId: `task:${task.id}`,
+        deliveryStatus,
       })
 
       // 计算下次运行时间（成功时重置退避）
@@ -209,6 +204,7 @@ export class Scheduler {
         durationMs,
         status: 'error',
         error: errorMsg,
+        deliveryStatus: 'skipped',
       })
 
       const newFailures = (task.consecutive_failures ?? 0) + 1
@@ -253,6 +249,33 @@ export class Scheduler {
   }
 
   /** 保存任务执行消息到 messages 表 */
+  /** 投递结果到外部 channel（best-effort，失败不影响任务状态） */
+  private deliver(
+    task: Pick<ScheduledTask, 'id' | 'agent_id' | 'name' | 'prompt' | 'delivery_mode' | 'delivery_target'>,
+    text: string,
+  ): 'sent' | 'failed' | 'skipped' {
+    if (task.delivery_mode !== 'push' || !task.delivery_target) {
+      return 'skipped'
+    }
+
+    const logger = getLogger()
+    try {
+      const taskName = task.name || task.prompt.slice(0, 30)
+      this.eventBus.emit({
+        type: 'complete',
+        agentId: task.agent_id,
+        chatId: task.delivery_target,
+        fullText: `[Task: ${taskName}]\n\n${text}`,
+        sessionId: `task:${task.id}`,
+      })
+      logger.info({ taskId: task.id, deliveryTarget: task.delivery_target }, '任务结果已投递')
+      return 'sent'
+    } catch (err) {
+      logger.warn({ taskId: task.id, deliveryTarget: task.delivery_target, error: String(err) }, '投递失败（best-effort）')
+      return 'failed'
+    }
+  }
+
   saveTaskMessages(
     task: Pick<ScheduledTask, 'id' | 'chat_id' | 'agent_id' | 'prompt' | 'name'>,
     runAt: string,
@@ -301,6 +324,12 @@ export class Scheduler {
       const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
       const durationMs = Date.now() - startMs
 
+      // 保存执行结果到 messages 表
+      this.saveTaskMessages(task, `${runId}-${runAt}`, result ?? '(no output)', 'manual', 'Manual Run')
+
+      // 投递到外部 channel
+      const deliveryStatus = this.deliver(task, result ?? '(no output)')
+
       // 记录运行日志
       saveTaskRunLog({
         taskId: task.id,
@@ -308,10 +337,8 @@ export class Scheduler {
         durationMs,
         status: 'success',
         result: `[manual] ${result ?? ''}`.slice(0, 500),
+        deliveryStatus,
       })
-
-      // 保存执行结果到 messages 表
-      this.saveTaskMessages(task, `${runId}-${runAt}`, result ?? '(no output)', 'manual', 'Manual Run')
 
       return { status: 'success', result: result ?? undefined }
     } catch (err) {
@@ -325,6 +352,7 @@ export class Scheduler {
         durationMs,
         status: 'error',
         error: `[manual] ${error}`,
+        deliveryStatus: 'skipped',
       })
 
       return { status: 'error', error }
