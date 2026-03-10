@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
+import { Cron } from 'croner'
 import {
   createTask,
   getTasks,
@@ -6,12 +8,55 @@ import {
   updateTask,
   deleteTask,
   getTaskRunLogs,
-  saveMessage,
-  upsertChat,
 } from '../db/index.ts'
 import type { AgentManager } from '../agent/manager.ts'
 import type { AgentQueue } from '../agent/queue.ts'
 import type { Scheduler } from '../scheduler/scheduler.ts'
+
+// ===== Zod 入参验证 =====
+
+const createTaskSchema = z.object({
+  agentId: z.string().min(1),
+  chatId: z.string().min(1),
+  prompt: z.string().min(1),
+  scheduleType: z.enum(['cron', 'interval', 'once']),
+  scheduleValue: z.string().min(1),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  timezone: z.string().optional(),
+}).refine((data) => {
+  if (data.scheduleType === 'cron') {
+    try {
+      const opts: { timezone?: string } = {}
+      if (data.timezone) opts.timezone = data.timezone
+      new Cron(data.scheduleValue, opts)
+      return true
+    } catch {
+      return false
+    }
+  }
+  if (data.scheduleType === 'interval') {
+    const ms = parseInt(data.scheduleValue, 10)
+    return !isNaN(ms) && ms >= 60_000
+  }
+  if (data.scheduleType === 'once') {
+    const date = new Date(data.scheduleValue)
+    return !isNaN(date.getTime()) && date.getTime() > Date.now()
+  }
+  return false
+}, {
+  message: 'Invalid schedule: cron must be a valid expression, interval >= 60000ms, once must be a future ISO date',
+})
+
+const updateTaskSchema = z.object({
+  prompt: z.string().min(1).optional(),
+  scheduleType: z.enum(['cron', 'interval', 'once']).optional(),
+  scheduleValue: z.string().min(1).optional(),
+  status: z.enum(['active', 'paused', 'completed']).optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  timezone: z.string().nullable().optional(),
+})
 
 export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManager, agentQueue: AgentQueue) {
   const app = new Hono()
@@ -24,38 +69,32 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
 
   // POST /api/tasks — 创建任务
   app.post('/tasks', async (c) => {
-    const body = await c.req.json<{
-      agentId: string
-      chatId: string
-      prompt: string
-      scheduleType: string
-      scheduleValue: string
-      name?: string
-      description?: string
-    }>()
-
-    // 验证 agent 存在
-    const agent = agentManager.getAgent(body.agentId)
-    if (!agent) {
-      return c.json({ error: 'Agent not found' }, 404)
+    const body = await c.req.json()
+    const parsed = createTaskSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
     }
 
-    // 验证调度类型
-    if (!['cron', 'interval', 'once'].includes(body.scheduleType)) {
-      return c.json({ error: 'Invalid schedule type. Must be cron, interval, or once' }, 400)
+    const data = parsed.data
+
+    // 验证 agent 存在
+    const agent = agentManager.getAgent(data.agentId)
+    if (!agent) {
+      return c.json({ error: 'Agent not found' }, 404)
     }
 
     const id = crypto.randomUUID()
 
     // 计算首次运行时间
     let nextRun: string
-    if (body.scheduleType === 'once') {
-      nextRun = body.scheduleValue // ISO 时间
+    if (data.scheduleType === 'once') {
+      nextRun = data.scheduleValue // ISO 时间
     } else {
       const computed = scheduler.calculateNextRun({
-        schedule_type: body.scheduleType,
-        schedule_value: body.scheduleValue,
+        schedule_type: data.scheduleType,
+        schedule_value: data.scheduleValue,
         last_run: null,
+        timezone: data.timezone,
       })
       if (!computed) {
         return c.json({ error: 'Invalid schedule value' }, 400)
@@ -65,14 +104,15 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
 
     createTask({
       id,
-      agentId: body.agentId,
-      chatId: body.chatId,
-      prompt: body.prompt,
-      scheduleType: body.scheduleType,
-      scheduleValue: body.scheduleValue,
+      agentId: data.agentId,
+      chatId: data.chatId,
+      prompt: data.prompt,
+      scheduleType: data.scheduleType,
+      scheduleValue: data.scheduleValue,
       nextRun,
-      name: body.name,
-      description: body.description,
+      name: data.name,
+      description: data.description,
+      timezone: data.timezone,
     })
 
     const task = getTask(id)
@@ -87,31 +127,59 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
       return c.json({ error: 'Task not found' }, 404)
     }
 
-    const body = await c.req.json<Partial<{
-      prompt: string
-      scheduleValue: string
-      scheduleType: string
-      status: string
-      name: string
-      description: string
-    }>>()
+    const body = await c.req.json()
+    const parsed = updateTaskSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+    }
 
+    const data = parsed.data
     const updates: Parameters<typeof updateTask>[1] = {}
-    if (body.prompt !== undefined) updates.prompt = body.prompt
-    if (body.status !== undefined) updates.status = body.status
-    if (body.name !== undefined) updates.name = body.name
-    if (body.description !== undefined) updates.description = body.description
-    if (body.scheduleValue !== undefined || body.scheduleType !== undefined) {
-      if (body.scheduleValue !== undefined) updates.scheduleValue = body.scheduleValue
-      // 重新计算 nextRun
-      const scheduleType = body.scheduleType ?? existing.schedule_type
-      const scheduleValue = body.scheduleValue ?? existing.schedule_value
+
+    if (data.prompt !== undefined) updates.prompt = data.prompt
+    if (data.status !== undefined) updates.status = data.status
+    if (data.name !== undefined) updates.name = data.name
+    if (data.description !== undefined) updates.description = data.description
+    if (data.timezone !== undefined) updates.timezone = data.timezone
+
+    // 更新调度类型和调度值
+    if (data.scheduleType !== undefined) updates.scheduleType = data.scheduleType
+    if (data.scheduleValue !== undefined) updates.scheduleValue = data.scheduleValue
+
+    // 如果调度相关字段变化，重新计算 nextRun
+    if (data.scheduleValue !== undefined || data.scheduleType !== undefined || data.timezone !== undefined) {
+      const scheduleType = data.scheduleType ?? existing.schedule_type
+      const scheduleValue = data.scheduleValue ?? existing.schedule_value
+      const timezone = data.timezone !== undefined ? data.timezone : existing.timezone
+
+      // 验证新的调度配置
+      if (scheduleType === 'cron') {
+        try {
+          const opts: { timezone?: string } = {}
+          if (timezone) opts.timezone = timezone
+          new Cron(scheduleValue, opts)
+        } catch {
+          return c.json({ error: 'Invalid cron expression' }, 400)
+        }
+      } else if (scheduleType === 'interval') {
+        const ms = parseInt(scheduleValue, 10)
+        if (isNaN(ms) || ms < 60_000) {
+          return c.json({ error: 'Interval must be >= 60000ms' }, 400)
+        }
+      }
+
       const nextRun = scheduler.calculateNextRun({
         schedule_type: scheduleType,
         schedule_value: scheduleValue,
         last_run: existing.last_run,
+        timezone,
       })
       updates.nextRun = nextRun
+    }
+
+    // 恢复 active 时重置连续失败计数
+    if (data.status === 'active' && existing.status === 'paused') {
+      updates.consecutiveFailures = 0
     }
 
     updateTask(id, updates)
@@ -133,6 +201,7 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
       schedule_type: existing.schedule_type,
       schedule_value: existing.schedule_value,
       last_run: null,
+      timezone: existing.timezone,
     })
 
     createTask({
@@ -145,6 +214,7 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
       nextRun: nextRun ?? new Date().toISOString(),
       name: existing.name ? `${existing.name} (copy)` : undefined,
       description: existing.description ?? undefined,
+      timezone: existing.timezone ?? undefined,
     })
 
     const task = getTask(newId)
@@ -171,41 +241,11 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
       return c.json({ error: 'Task not found' }, 404)
     }
 
-    const runAt = new Date().toISOString()
-    const runId = crypto.randomUUID().slice(0, 8)
-    try {
-      const result = await agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
-
-      // 保存执行结果到 messages 表
-      const timestamp = new Date().toISOString()
-      saveMessage({
-        id: `${task.id}-${runId}-user`,
-        chatId: task.chat_id,
-        sender: 'manual',
-        senderName: 'Manual Run',
-        content: task.prompt,
-        timestamp: runAt,
-        isFromMe: true,
-        isBotMessage: false,
-      })
-      saveMessage({
-        id: `${task.id}-${runId}-bot`,
-        chatId: task.chat_id,
-        sender: task.agent_id,
-        senderName: task.agent_id,
-        content: result ?? '(no output)',
-        timestamp,
-        isFromMe: false,
-        isBotMessage: true,
-      })
-      const taskName = (task as any).name || task.prompt.slice(0, 30)
-      upsertChat(task.chat_id, task.agent_id, `Task: ${taskName}`, 'task')
-
-      return c.json({ status: 'success', result })
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err)
-      return c.json({ status: 'error', error }, 500)
+    const result = await scheduler.runManually(task)
+    if (result.status === 'error') {
+      return c.json(result, 500)
     }
+    return c.json(result)
   })
 
   // GET /api/tasks/:id/logs — 运行历史

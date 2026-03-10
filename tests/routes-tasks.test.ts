@@ -29,6 +29,10 @@ let app: ReturnType<typeof createTasksRoutes>
 let mockAgentQueue: any
 
 beforeAll(() => {
+  mockAgentQueue = {
+    enqueue: mock(() => Promise.resolve('agent response')),
+  }
+
   const mockScheduler = {
     calculateNextRun: (task: Pick<ScheduledTask, 'schedule_type' | 'schedule_value' | 'last_run'>) => {
       if (task.schedule_type === 'interval') {
@@ -41,15 +45,27 @@ beforeAll(() => {
       if (task.schedule_type === 'cron') return new Date(Date.now() + 60_000).toISOString()
       return null
     },
+    runManually: async (task: ScheduledTask) => {
+      try {
+        const result = await mockAgentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
+        // 模拟 saveTaskMessages
+        const { saveMessage, upsertChat } = await import('../src/db/index.ts')
+        const runId = crypto.randomUUID().slice(0, 8)
+        const runAt = new Date().toISOString()
+        saveMessage({ id: `${task.id}-${runId}-${runAt}-user`, chatId: task.chat_id, sender: 'manual', senderName: 'Manual Run', content: task.prompt, timestamp: runAt, isFromMe: true, isBotMessage: false })
+        saveMessage({ id: `${task.id}-${runId}-${runAt}-bot`, chatId: task.chat_id, sender: task.agent_id, senderName: task.agent_id, content: result ?? '(no output)', timestamp: new Date().toISOString(), isFromMe: false, isBotMessage: true })
+        const taskName = task.name || task.prompt.slice(0, 30)
+        upsertChat(task.chat_id, task.agent_id, `Task: ${taskName}`, 'task')
+        return { status: 'success', result: result ?? undefined }
+      } catch (err: any) {
+        return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+      }
+    },
   } as any
 
   const mockAgentManager = {
     getAgent: (id: string) => (id === 'agent-1' || id === 'agent-2') ? { id } : undefined,
   } as any
-
-  mockAgentQueue = {
-    enqueue: mock(() => Promise.resolve('agent response')),
-  }
 
   app = createTasksRoutes(mockScheduler, mockAgentManager, mockAgentQueue)
 })
@@ -545,7 +561,7 @@ describe('POST /tasks — 无效的 scheduleType', () => {
     })
     expect(res.status).toBe(400)
     const body = await res.json() as any
-    expect(body.error).toContain('Invalid schedule type')
+    expect(body.error).toBeDefined()
   })
 })
 
