@@ -21,11 +21,11 @@ const I18nContext = createContext<I18nContextType>({
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(
-    () => (localStorage.getItem('zoerclaw-locale') as Locale) || 'en',
+    () => (localStorage.getItem('youclaw-locale') as Locale) || 'en',
   )
 
   const setLocale = (l: Locale) => {
-    localStorage.setItem('zoerclaw-locale', l)
+    localStorage.setItem('youclaw-locale', l)
     setLocaleState(l)
   }
 

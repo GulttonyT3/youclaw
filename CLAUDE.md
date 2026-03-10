@@ -1,4 +1,4 @@
-# ZoerClaw
+# YouClaw
 
 桌面端 AI 助手应用，参考 nanoClaw/OpenClaw 设计。
 

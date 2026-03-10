@@ -22,7 +22,7 @@ export class SkillsLoader {
    * 加载所有可用 skills，按三级优先级覆盖（同名高优先级覆盖低优先级）
    * 1. Agent 工作空间: agents/<id>/skills/
    * 2. 项目级: skills/
-   * 3. 用户级: ~/.zoerclaw/skills/
+   * 3. 用户级: ~/.youclaw/skills/
    *
    * 支持缓存，传入 forceReload=true 强制重载
    */
@@ -37,7 +37,7 @@ export class SkillsLoader {
     const skillMap = new Map<string, Skill>()
 
     // 3. 用户级（最低优先级，先加载）
-    const userSkillsDir = resolve(homedir(), '.zoerclaw', 'skills')
+    const userSkillsDir = resolve(homedir(), '.youclaw', 'skills')
     this.loadSkillsFromDir(userSkillsDir, 'user', skillMap)
 
     // 2. 项目级（builtin）

@@ -11,7 +11,7 @@ export function getPaths() {
   return {
     root: ROOT_DIR,
     data: dataDir,
-    db: resolve(dataDir, 'zoerclaw.db'),
+    db: resolve(dataDir, 'youclaw.db'),
     agents: resolve(ROOT_DIR, 'agents'),
     skills: resolve(ROOT_DIR, 'skills'),
     prompts: resolve(ROOT_DIR, 'prompts'),

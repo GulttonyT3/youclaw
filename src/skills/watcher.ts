@@ -32,7 +32,7 @@ export class SkillsWatcher {
 
     const dirsToWatch = [
       paths.skills,                               // 项目级 skills/
-      resolve(homedir(), '.zoerclaw', 'skills'),   // 用户级
+      resolve(homedir(), '.youclaw', 'skills'),   // 用户级
     ]
 
     // 也监听 agents 下的 skills 子目录

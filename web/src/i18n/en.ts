@@ -17,7 +17,7 @@ export const en = {
     system: 'System',
   },
   topbar: {
-    title: 'ZoerClaw',
+    title: 'YouClaw',
     running: 'Running',
   },
   chat: {

@@ -19,7 +19,7 @@ export const zh: Translations = {
     system: '系统',
   },
   topbar: {
-    title: 'ZoerClaw',
+    title: 'YouClaw',
     running: '运行中',
   },
   chat: {

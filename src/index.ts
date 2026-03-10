@@ -17,7 +17,7 @@ async function main() {
 
   // 2. 初始化日志
   const logger = initLogger()
-  logger.info('ZoerClaw 启动中...')
+  logger.info('YouClaw 启动中...')
 
   // 3. 初始化数据库
   initDatabase()
@@ -161,7 +161,7 @@ async function main() {
   })
 
   logger.info({ port: env.PORT }, `HTTP 服务已启动: http://localhost:${env.PORT}`)
-  logger.info('ZoerClaw 已就绪')
+  logger.info('YouClaw 已就绪')
 
   // 14. 优雅关闭
   const shutdown = () => {

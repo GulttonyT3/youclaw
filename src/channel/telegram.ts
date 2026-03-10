@@ -41,7 +41,7 @@ export class TelegramChannel implements Channel {
 
     // /ping — 健康检查
     this.bot.command('ping', (ctx) => {
-      ctx.reply('ZoerClaw is online.')
+      ctx.reply('YouClaw is online.')
     })
 
     // 文本消息处理
@@ -66,7 +66,7 @@ export class TelegramChannel implements Channel {
       const msgId = ctx.message.message_id.toString()
       const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup'
 
-      // 处理 @mention：如果 bot 被 @ 提及，将 @bot_username 替换为 @ZoerClaw
+      // 处理 @mention：如果 bot 被 @ 提及，将 @bot_username 替换为 @YouClaw
       const botUsername = ctx.me?.username?.toLowerCase()
       if (botUsername) {
         const entities = ctx.message.entities || []
@@ -80,9 +80,9 @@ export class TelegramChannel implements Channel {
           return false
         })
         if (isBotMentioned) {
-          // 将 @bot_username 替换为 @ZoerClaw 以便统一触发格式
+          // 将 @bot_username 替换为 @YouClaw 以便统一触发格式
           const regex = new RegExp(`@${botUsername}`, 'gi')
-          content = content.replace(regex, '@ZoerClaw')
+          content = content.replace(regex, '@YouClaw')
         }
       }
 
