@@ -80,6 +80,8 @@ async function main() {
         scheduleType: data.scheduleType,
         scheduleValue: data.scheduleValue,
         nextRun: nextRun ?? new Date().toISOString(),
+        name: data.name,
+        description: data.description,
       })
 
       // 写入快照
