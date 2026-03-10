@@ -5,6 +5,10 @@ export type AgentEvent =
   | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string }
   | { type: 'error'; agentId: string; chatId: string; error: string }
   | { type: 'processing'; agentId: string; chatId: string; isProcessing: boolean }
+  // Phase 3: 子 Agent 事件
+  | { type: 'subagent_started'; agentId: string; chatId: string; taskId: string; description: string }
+  | { type: 'subagent_progress'; agentId: string; chatId: string; taskId: string; summary?: string }
+  | { type: 'subagent_completed'; agentId: string; chatId: string; taskId: string; status: string; summary: string }
 
 export type AgentEventType = AgentEvent['type']
 
