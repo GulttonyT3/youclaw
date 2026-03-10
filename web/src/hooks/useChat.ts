@@ -33,6 +33,15 @@ export function useChat(agentId: string) {
         setIsProcessing(event.isProcessing ?? false)
         break
       case 'error':
+        // 显示错误信息给用户，而不是静默吞掉
+        if (event.error) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `⚠️ ${event.error}`,
+            timestamp: new Date().toISOString(),
+          }])
+        }
         setStreamingText('')
         setIsProcessing(false)
         break
@@ -50,9 +59,21 @@ export function useChat(agentId: string) {
     setIsProcessing(true)
     setStreamingText('')
 
-    const result = await sendMessage(agentId, prompt, chatId ?? undefined)
-    if (!chatId) {
-      setChatId(result.chatId)
+    try {
+      const result = await sendMessage(agentId, prompt, chatId ?? undefined)
+      if (!chatId) {
+        setChatId(result.chatId)
+      }
+    } catch (err) {
+      // 请求失败时显示错误并重置状态
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `⚠️ ${errorMsg}`,
+        timestamp: new Date().toISOString(),
+      }])
+      setIsProcessing(false)
     }
   }, [agentId, chatId])
 
