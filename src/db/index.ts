@@ -83,6 +83,12 @@ export function initDatabase(): Database {
   try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN name TEXT') } catch {}
   try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN description TEXT') } catch {}
 
+  // 迁移：添加并发防护、退避、时区、上次结果列
+  try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN running_since TEXT') } catch {}
+  try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN consecutive_failures INTEGER DEFAULT 0') } catch {}
+  try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN timezone TEXT') } catch {}
+  try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN last_result TEXT') } catch {}
+
   getLogger().info({ path: paths.db }, '数据库初始化完成')
   return _db
 }
@@ -185,6 +191,10 @@ export interface ScheduledTask {
   created_at: string
   name: string | null
   description: string | null
+  running_since: string | null
+  consecutive_failures: number
+  timezone: string | null
+  last_result: string | null
 }
 
 export interface TaskRunLog {
@@ -207,12 +217,13 @@ export function createTask(task: {
   nextRun: string
   name?: string
   description?: string
+  timezone?: string
 }): void {
   const db = getDatabase()
   db.run(
-    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [task.id, task.agentId, task.chatId, task.prompt, task.scheduleType, task.scheduleValue, task.nextRun, new Date().toISOString(), task.name ?? null, task.description ?? null]
+    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description, timezone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [task.id, task.agentId, task.chatId, task.prompt, task.scheduleType, task.scheduleValue, task.nextRun, new Date().toISOString(), task.name ?? null, task.description ?? null, task.timezone ?? null]
   )
 }
 
@@ -228,24 +239,34 @@ export function getTask(id: string): ScheduledTask | null {
 
 export function updateTask(id: string, updates: Partial<{
   prompt: string
+  scheduleType: string
   scheduleValue: string
   status: string
   nextRun: string | null
   lastRun: string
   name: string
   description: string
+  runningSince: string | null
+  consecutiveFailures: number
+  timezone: string | null
+  lastResult: string | null
 }>): void {
   const db = getDatabase()
   const fields: string[] = []
   const values: (string | number | null)[] = []
 
   if (updates.prompt !== undefined) { fields.push('prompt = ?'); values.push(updates.prompt) }
+  if (updates.scheduleType !== undefined) { fields.push('schedule_type = ?'); values.push(updates.scheduleType) }
   if (updates.scheduleValue !== undefined) { fields.push('schedule_value = ?'); values.push(updates.scheduleValue) }
   if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status) }
   if (updates.nextRun !== undefined) { fields.push('next_run = ?'); values.push(updates.nextRun) }
   if (updates.lastRun !== undefined) { fields.push('last_run = ?'); values.push(updates.lastRun) }
   if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name) }
   if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description) }
+  if (updates.runningSince !== undefined) { fields.push('running_since = ?'); values.push(updates.runningSince) }
+  if (updates.consecutiveFailures !== undefined) { fields.push('consecutive_failures = ?'); values.push(updates.consecutiveFailures) }
+  if (updates.timezone !== undefined) { fields.push('timezone = ?'); values.push(updates.timezone) }
+  if (updates.lastResult !== undefined) { fields.push('last_result = ?'); values.push(updates.lastResult) }
 
   if (fields.length === 0) return
 
@@ -262,8 +283,24 @@ export function deleteTask(id: string): void {
 export function getTasksDueBy(time: string): ScheduledTask[] {
   const db = getDatabase()
   return db.query(
-    `SELECT * FROM scheduled_tasks WHERE status = 'active' AND next_run IS NOT NULL AND next_run <= ?`
+    `SELECT * FROM scheduled_tasks WHERE status = 'active' AND next_run IS NOT NULL AND next_run <= ? AND running_since IS NULL`
   ).all(time) as ScheduledTask[]
+}
+
+/** 查询卡住的任务（running_since 早于阈值） */
+export function getStuckTasks(cutoffIso: string): ScheduledTask[] {
+  const db = getDatabase()
+  return db.query(
+    `SELECT * FROM scheduled_tasks WHERE running_since IS NOT NULL AND running_since <= ?`
+  ).all(cutoffIso) as ScheduledTask[]
+}
+
+/** 清理超期运行日志 */
+export function pruneOldTaskRunLogs(retainDays: number): number {
+  const db = getDatabase()
+  const cutoff = new Date(Date.now() - retainDays * 24 * 60 * 60 * 1000).toISOString()
+  const result = db.run('DELETE FROM task_run_logs WHERE run_at < ?', [cutoff])
+  return result.changes
 }
 
 // ===== 运行日志 =====
