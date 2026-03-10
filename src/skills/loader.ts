@@ -113,38 +113,57 @@ export class SkillsLoader {
   }
 
   /**
-   * 对 skills 列表应用 prompt 限制
-   * 1. 单个 skill 内容截断
-   * 2. 数量限制
-   * 3. 总字符限制
+   * 对 skills 列表应用优先级感知的 prompt 限制
+   * 1. 按优先级分三组：critical / normal / low
+   * 2. Critical: 仅截断单个内容，不受数量和总量限制
+   * 3. Normal + Low: 先 normal 后 low，依次应用数量限制和总字符限制（减去 critical 占用）
+   * 4. 返回顺序：critical → normal → low
    */
   applyPromptLimits(skills: Skill[]): Skill[] {
     const { maxSingleSkillChars, maxSkillCount, maxTotalChars } = this.config
 
-    // 1. 单个 skill 内容截断
-    let limited = skills.map((skill) => {
+    // 按优先级分组
+    const critical: Skill[] = []
+    const normal: Skill[] = []
+    const low: Skill[] = []
+
+    for (const skill of skills) {
+      const priority = skill.frontmatter.priority ?? 'normal'
+      if (priority === 'critical') critical.push(skill)
+      else if (priority === 'low') low.push(skill)
+      else normal.push(skill)
+    }
+
+    // Critical: 仅截断单个内容，不受数量和总量限制
+    const truncate = (skill: Skill): Skill => {
       if (skill.content.length <= maxSingleSkillChars) return skill
       return {
         ...skill,
         content: skill.content.slice(0, maxSingleSkillChars) + '\n...[内容已截断]',
       }
-    })
-
-    // 2. 数量限制
-    if (limited.length > maxSkillCount) {
-      limited = limited.slice(0, maxSkillCount)
     }
 
-    // 3. 总字符限制
+    const limitedCritical = critical.map(truncate)
+
+    // 计算 critical 占用的配额
+    const criticalCount = limitedCritical.length
+    const criticalChars = limitedCritical.reduce((sum, s) => sum + s.content.length, 0)
+
+    // Normal + Low: 合并后依次应用限制（减去 critical 占用）
+    const rest = [...normal, ...low].map(truncate)
+    const remainingCount = Math.max(0, maxSkillCount - criticalCount)
+    const remainingChars = Math.max(0, maxTotalChars - criticalChars)
+
     let totalChars = 0
-    const result: Skill[] = []
-    for (const skill of limited) {
+    const limitedRest: Skill[] = []
+    for (const skill of rest) {
+      if (limitedRest.length >= remainingCount) break
       totalChars += skill.content.length
-      if (totalChars > maxTotalChars) break
-      result.push(skill)
+      if (totalChars > remainingChars) break
+      limitedRest.push(skill)
     }
 
-    return result
+    return [...limitedCritical, ...limitedRest]
   }
 
   /**

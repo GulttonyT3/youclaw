@@ -1,5 +1,7 @@
 import { parse as parseYaml } from 'yaml'
-import type { SkillFrontmatter } from './types.ts'
+import type { SkillFrontmatter, SkillPriority } from './types.ts'
+
+const VALID_PRIORITIES = new Set<SkillPriority>(['critical', 'normal', 'low'])
 
 export interface ParseResult {
   frontmatter: SkillFrontmatter
@@ -48,6 +50,10 @@ export function parseFrontmatter(raw: string): ParseResult {
     }
   }
 
+  // 解析 priority 字段，无效值忽略
+  const rawPriority = typeof parsed.priority === 'string' ? parsed.priority as SkillPriority : undefined
+  const priority = rawPriority && VALID_PRIORITIES.has(rawPriority) ? rawPriority : undefined
+
   const frontmatter: SkillFrontmatter = {
     name: parsed.name,
     description: String(parsed.description),
@@ -58,6 +64,7 @@ export function parseFrontmatter(raw: string): ParseResult {
     tools: Array.isArray(parsed.tools) ? (parsed.tools as unknown[]).map(String) : undefined,
     tags: Array.isArray(parsed.tags) ? (parsed.tags as unknown[]).map(String) : undefined,
     globs: Array.isArray(parsed.globs) ? (parsed.globs as unknown[]).map(String) : undefined,
+    priority,
     install,
   }
 

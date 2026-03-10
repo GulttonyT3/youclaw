@@ -1,3 +1,5 @@
+export type SkillPriority = 'critical' | 'normal' | 'low'
+
 export interface SkillFrontmatter {
   name: string
   description: string
@@ -8,6 +10,7 @@ export interface SkillFrontmatter {
   tools?: string[]        // 提供的工具
   tags?: string[]         // 标签分类，如 ["coding", "search"]
   globs?: string[]        // 匹配的文件模式，如 ["*.py", "*.ts"]
+  priority?: SkillPriority // 优先级：critical > normal > low
   install?: Record<string, string> // 安装指南，如 { brew: "brew install chrome", apt: "apt install chromium" }
 }
 
