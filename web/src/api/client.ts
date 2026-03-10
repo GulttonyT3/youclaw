@@ -101,6 +101,8 @@ export interface ScheduledTaskDTO {
   last_run: string | null
   status: string
   created_at: string
+  name: string | null
+  description: string | null
 }
 
 export interface TaskRunLogDTO {
@@ -123,6 +125,8 @@ export async function createScheduledTask(data: {
   prompt: string
   scheduleType: string
   scheduleValue: string
+  name?: string
+  description?: string
 }) {
   return apiFetch<ScheduledTaskDTO>('/api/tasks', {
     method: 'POST',
@@ -130,7 +134,7 @@ export async function createScheduledTask(data: {
   })
 }
 
-export async function updateScheduledTask(id: string, data: Partial<{ prompt: string; scheduleValue: string; status: string }>) {
+export async function updateScheduledTask(id: string, data: Partial<{ prompt: string; scheduleValue: string; scheduleType: string; status: string; name: string; description: string }>) {
   return apiFetch<ScheduledTaskDTO>(`/api/tasks/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
@@ -140,6 +144,12 @@ export async function updateScheduledTask(id: string, data: Partial<{ prompt: st
 export async function deleteScheduledTask(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/tasks/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export async function cloneScheduledTask(id: string) {
+  return apiFetch<ScheduledTaskDTO>(`/api/tasks/${id}/clone`, {
+    method: 'POST',
   })
 }
 
