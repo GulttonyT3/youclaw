@@ -148,6 +148,12 @@ export function getChats(): Array<{
   return db.query('SELECT * FROM chats ORDER BY last_message_time DESC').all() as any
 }
 
+export function deleteChat(chatId: string) {
+  const db = getDatabase()
+  db.run('DELETE FROM messages WHERE chat_id = ?', [chatId])
+  db.run('DELETE FROM chats WHERE chat_id = ?', [chatId])
+}
+
 // ===== Session 操作 =====
 
 export function getSession(agentId: string, chatId: string): string | null {
