@@ -11,6 +11,8 @@ interface ScheduleTaskMessage {
   schedule_type: string
   schedule_value: string
   chatId: string
+  name?: string
+  description?: string
 }
 
 interface PauseTaskMessage {
@@ -39,6 +41,8 @@ export interface IpcDeps {
     scheduleValue: string
     agentId: string
     chatId: string
+    name?: string
+    description?: string
   }) => void
   onPauseTask: (taskId: string) => void
   onResumeTask: (taskId: string) => void
@@ -167,6 +171,8 @@ export class IpcWatcher {
           scheduleValue: message.schedule_value,
           agentId,
           chatId: message.chatId,
+          name: message.name,
+          description: message.description,
         })
         break
       }
