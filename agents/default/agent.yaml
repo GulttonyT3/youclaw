@@ -24,7 +24,13 @@ model: "claude-sonnet-4-6"
 # disallowedTools: ["TodoWrite"]
 # maxTurns: 100
 # effort: "high"
-# mcpServers:
+mcpServers:
+  minimax:
+    command: "uvx"
+    args: ["minimax-coding-plan-mcp", "-y"]
+    env:
+      MINIMAX_API_KEY: "${MINIMAX_API_KEY}"
+      MINIMAX_API_HOST: "${MINIMAX_API_HOST}"
 #   my-tools:
 #     command: "bun"
 #     args: ["./tools/server.ts"]
