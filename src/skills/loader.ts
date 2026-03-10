@@ -5,17 +5,33 @@ import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import { checkEligibility } from './eligibility.ts'
-import type { Skill } from './types.ts'
+import type { Skill, SkillsConfig } from './types.ts'
+import { DEFAULT_SKILLS_CONFIG } from './types.ts'
 import type { AgentConfig } from '../agent/types.ts'
 
 export class SkillsLoader {
+  private cache: Map<string, Skill> = new Map()
+  private lastLoadTime: number = 0
+  private config: SkillsConfig
+
+  constructor(config?: Partial<SkillsConfig>) {
+    this.config = { ...DEFAULT_SKILLS_CONFIG, ...config }
+  }
+
   /**
    * 加载所有可用 skills，按三级优先级覆盖（同名高优先级覆盖低优先级）
    * 1. Agent 工作空间: agents/<id>/skills/
    * 2. 项目级: skills/
    * 3. 用户级: ~/.zoerclaw/skills/
+   *
+   * 支持缓存，传入 forceReload=true 强制重载
    */
-  loadAllSkills(): Skill[] {
+  loadAllSkills(forceReload?: boolean): Skill[] {
+    // 有缓存且不强制重载时，直接返回缓存
+    if (!forceReload && this.cache.size > 0) {
+      return Array.from(this.cache.values())
+    }
+
     const logger = getLogger()
     const paths = getPaths()
     const skillMap = new Map<string, Skill>()
@@ -24,9 +40,9 @@ export class SkillsLoader {
     const userSkillsDir = resolve(homedir(), '.zoerclaw', 'skills')
     this.loadSkillsFromDir(userSkillsDir, 'user', skillMap)
 
-    // 2. 项目级
+    // 2. 项目级（builtin）
     const projectSkillsDir = paths.skills
-    this.loadSkillsFromDir(projectSkillsDir, 'project', skillMap)
+    this.loadSkillsFromDir(projectSkillsDir, 'builtin', skillMap)
 
     // 1. Agent 工作空间级（最高优先级，最后加载覆盖）
     const agentsDir = paths.agents
@@ -43,6 +59,10 @@ export class SkillsLoader {
         this.loadSkillsFromDir(agentSkillsDir, 'workspace', skillMap)
       }
     }
+
+    // 更新缓存
+    this.cache = skillMap
+    this.lastLoadTime = Date.now()
 
     const skills = Array.from(skillMap.values())
     logger.debug({ count: skills.length }, 'Skills 加载完成')
@@ -63,6 +83,68 @@ export class SkillsLoader {
 
     // 只返回 agent 指定的 skills
     return allSkills.filter((skill) => agentConfig.skills!.includes(skill.name))
+  }
+
+  /**
+   * 清缓存并重载所有 skills
+   */
+  refresh(): Skill[] {
+    this.cache.clear()
+    this.lastLoadTime = 0
+    return this.loadAllSkills(true)
+  }
+
+  /**
+   * 获取缓存统计
+   */
+  getCacheStats(): { skillCount: number; lastLoadTime: number; cached: boolean } {
+    return {
+      skillCount: this.cache.size,
+      lastLoadTime: this.lastLoadTime,
+      cached: this.cache.size > 0,
+    }
+  }
+
+  /**
+   * 获取当前配置
+   */
+  getConfig(): SkillsConfig {
+    return { ...this.config }
+  }
+
+  /**
+   * 对 skills 列表应用 prompt 限制
+   * 1. 单个 skill 内容截断
+   * 2. 数量限制
+   * 3. 总字符限制
+   */
+  applyPromptLimits(skills: Skill[]): Skill[] {
+    const { maxSingleSkillChars, maxSkillCount, maxTotalChars } = this.config
+
+    // 1. 单个 skill 内容截断
+    let limited = skills.map((skill) => {
+      if (skill.content.length <= maxSingleSkillChars) return skill
+      return {
+        ...skill,
+        content: skill.content.slice(0, maxSingleSkillChars) + '\n...[内容已截断]',
+      }
+    })
+
+    // 2. 数量限制
+    if (limited.length > maxSkillCount) {
+      limited = limited.slice(0, maxSkillCount)
+    }
+
+    // 3. 总字符限制
+    let totalChars = 0
+    const result: Skill[] = []
+    for (const skill of limited) {
+      totalChars += skill.content.length
+      if (totalChars > maxTotalChars) break
+      result.push(skill)
+    }
+
+    return result
   }
 
   /**
@@ -96,7 +178,7 @@ export class SkillsLoader {
       try {
         const raw = readFileSync(skillFile, 'utf-8')
         const { frontmatter, content } = parseFrontmatter(raw)
-        const { eligible, errors } = checkEligibility(frontmatter)
+        const { eligible, errors, detail } = checkEligibility(frontmatter)
 
         const skill: Skill = {
           name: frontmatter.name,
@@ -106,6 +188,8 @@ export class SkillsLoader {
           path: skillFile,
           eligible,
           eligibilityErrors: errors,
+          eligibilityDetail: detail,
+          loadedAt: Date.now(),
         }
 
         // 高优先级覆盖低优先级
