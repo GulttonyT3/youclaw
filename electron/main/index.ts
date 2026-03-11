@@ -288,15 +288,10 @@ function applyTheme(theme: string): void {
 }
 
 function createTray(): void {
-  const iconPath = path.join(__dirname, "../../../resources/logo.png");
-  const icon = nativeImage.createFromPath(iconPath).resize({ width: 44, height: 44 });
-  icon.setTemplateImage(false);
-  const scaledIcon = nativeImage.createFromBuffer(icon.toPNG(), {
-    width: 22,
-    height: 22,
-    scaleFactor: 2.0,
-  });
-  tray = new Tray(scaledIcon);
+  const iconPath = path.join(__dirname, "../../../resources/trayTemplate.png");
+  const icon = nativeImage.createFromPath(iconPath);
+  icon.setTemplateImage(true);
+  tray = new Tray(icon);
   tray.setToolTip("You Claw");
 
   const contextMenu = Menu.buildFromTemplate([
@@ -316,10 +311,12 @@ function createTray(): void {
     },
   ]);
 
-  tray.setContextMenu(contextMenu);
-
-  tray.on("double-click", () => {
+  // Left-click shows window, right-click shows context menu
+  tray.on("click", () => {
     mainWindow?.show();
+  });
+  tray.on("right-click", () => {
+    tray?.popUpContextMenu(contextMenu);
   });
 }
 
