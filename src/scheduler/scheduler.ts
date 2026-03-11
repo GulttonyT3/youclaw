@@ -9,6 +9,7 @@ import {
   upsertChat,
   pruneOldTaskRunLogs,
 } from '../db/index.ts'
+import { cleanOldLogs } from '../logger/reader.ts'
 import type { ScheduledTask } from '../db/index.ts'
 import type { AgentQueue } from '../agent/queue.ts'
 import type { AgentManager } from '../agent/manager.ts'
@@ -90,6 +91,11 @@ export class Scheduler {
         const deleted = pruneOldTaskRunLogs(LOG_RETAIN_DAYS)
         if (deleted > 0) {
           logger.info({ deleted }, '已裁剪过期运行日志')
+        }
+        // 清理过期系统日志文件
+        const deletedLogs = cleanOldLogs(LOG_RETAIN_DAYS)
+        if (deletedLogs > 0) {
+          logger.info({ deleted: deletedLogs }, '已清理过期系统日志文件')
         }
       } catch (err) {
         logger.error({ error: String(err) }, '裁剪运行日志失败')
