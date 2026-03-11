@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import type { MemoryManager } from '../memory/index.ts'
+import type { MemoryIndexer } from '../memory/index.ts'
 import type { AgentManager } from '../agent/index.ts'
 
-export function createMemoryRoutes(memoryManager: MemoryManager, agentManager: AgentManager) {
+export function createMemoryRoutes(memoryManager: MemoryManager, agentManager: AgentManager, memoryIndexer: MemoryIndexer | null) {
   const memory = new Hono()
 
   // ===== 全局 Memory =====
@@ -18,6 +19,28 @@ export function createMemoryRoutes(memoryManager: MemoryManager, agentManager: A
     const body = await c.req.json<{ content: string }>()
     memoryManager.updateGlobalMemory(body.content)
     return c.json({ ok: true })
+  })
+
+  // ===== 记忆搜索 =====
+
+  // GET /api/memory/search?q=xxx&agentId=xxx&fileType=xxx — 全文搜索
+  memory.get('/memory/search', (c) => {
+    if (!memoryIndexer) {
+      return c.json({ error: 'Memory indexer not available' }, 503)
+    }
+
+    const q = c.req.query('q')
+    if (!q) {
+      return c.json({ error: 'Missing query parameter: q' }, 400)
+    }
+
+    const results = memoryIndexer.search(q, {
+      agentId: c.req.query('agentId'),
+      fileType: c.req.query('fileType'),
+      limit: Number(c.req.query('limit')) || 20,
+    })
+
+    return c.json(results)
   })
 
   // ===== Agent Memory =====
