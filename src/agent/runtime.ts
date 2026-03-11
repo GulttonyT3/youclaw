@@ -70,7 +70,12 @@ export class AgentRuntime {
 
     // 查找已有 session
     const existingSessionId = getSession(agentId, chatId)
-    logger.info({ agentId, chatId, hasSession: !!existingSessionId, category: 'agent' }, '开始处理消息')
+    logger.info({
+      agentId, chatId,
+      hasSession: !!existingSessionId,
+      promptPreview: prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt,
+      category: 'agent',
+    }, '开始处理消息')
 
     const startTime = Date.now()
     try {
@@ -180,6 +185,7 @@ export class AgentRuntime {
     model: string,
     requestedSkills?: string[],
   ): Promise<{ fullText: string; sessionId: string }> {
+    const logger = getLogger()
     const abortController = new AbortController()
     let fullText = ''
     let sessionId = existingSessionId ?? ''
@@ -195,6 +201,19 @@ export class AgentRuntime {
     // cwd 和 cli 路径都需要指向 asar.unpacked 中的真实文件系统路径
     const isElectronPackaged = !!process.versions.electron && !(process as any).defaultApp
     const cwd = toUnpacked(this.config.workspaceDir)
+    const mcpServerNames = this.config.mcpServers ? Object.keys(this.config.mcpServers) : []
+
+    logger.info({
+      agentId, chatId,
+      systemPromptLength: systemPrompt.length,
+      model,
+      isResume: !!existingSessionId,
+      mcpServers: mcpServerNames.length > 0 ? mcpServerNames : undefined,
+      subAgents: this.config.agents ? Object.keys(this.config.agents).length : 0,
+      maxTurns: this.config.maxTurns,
+      category: 'agent',
+    }, 'SDK query 启动')
+
     const queryOptions: Record<string, unknown> = {
       model,
       cwd,
@@ -239,19 +258,39 @@ export class AgentRuntime {
       queryOptions.maxTurns = this.config.maxTurns
     }
 
+    const queryStartTime = Date.now()
+
     const q = query({
       prompt,
       options: queryOptions as Parameters<typeof query>[0]['options'],
     })
 
     // 流式处理 SDK 消息
+    let firstResponseLogged = false
+    let turnCount = 0
     for await (const message of q) {
+      // 记录首次响应延迟（TTFT）
+      if (!firstResponseLogged && message.type === 'assistant') {
+        const ttftMs = Date.now() - queryStartTime
+        logger.info({ agentId, chatId, ttftMs, category: 'agent' }, 'SDK 首次响应')
+        firstResponseLogged = true
+      }
+      if (message.type === 'assistant') {
+        turnCount++
+      }
       await this.handleMessage(message, agentId, chatId, (text) => {
         fullText += text
       }, (sid) => {
         sessionId = sid
       })
     }
+
+    logger.info({
+      agentId, chatId,
+      totalTurns: turnCount,
+      totalDurationMs: Date.now() - queryStartTime,
+      category: 'agent',
+    }, 'SDK query 结束')
 
     return { fullText, sessionId }
   }
