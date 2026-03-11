@@ -4,13 +4,23 @@
   "main": "dist/electron/main/index.js",
   "type": "module",
   "private": true,
+  "description": "Desktop AI assistant powered by Claude",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CodePhiliaX/youClaw"
+  },
+  "author": {
+    "name": "CodePhiliaX",
+    "email": "huanyueyaoqin@qq.com"
+  },
+  "license": "ISC",
   "scripts": {
-    "dev": "tsx --watch src/index.ts",
+    "dev": "npm rebuild better-sqlite3 && tsx --watch src/index.ts",
     "start": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "dev:web": "cd web && npm run dev",
-    "dev:electron": "npx tsc -p tsconfig.build.json && npx tsc -p electron/tsconfig.json && electron .",
-    "pack": "node scripts/build-electron.mjs && electron-builder --dir",
+    "dev:electron": "node scripts/dev-electron.mjs",
+    "pack": "node scripts/build-electron.mjs && electron-builder --dir && codesign --force --deep --sign - release/mac-arm64/You\\ Claw.app",
     "dist": "node scripts/build-electron.mjs && electron-builder",
     "publish": "node scripts/build-electron.mjs && electron-builder --publish always"
   },
@@ -28,6 +38,7 @@
     "better-sqlite3": "^12.6.2",
     "croner": "^10.0.1",
     "electron-log": "^5.4.3",
+    "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3",
     "grammy": "^1.41.1",
     "hono": "^4.12.6",

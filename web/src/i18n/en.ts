@@ -197,6 +197,11 @@ export const en = {
     betaUpdates: 'Beta Updates',
     betaUpdatesDesc: 'Receive pre-release versions for early testing',
     webModeHint: 'Running in web mode. Updates are managed by the server.',
+    apiKeyDesc: 'Enter your Anthropic API Key for Claude agent functionality.',
+    apiKeyShow: 'Show',
+    apiKeyHide: 'Hide',
+    apiKeySave: 'Save',
+    apiKeySaved: 'Saved!',
   },
   system: {
     title: 'System Monitor',

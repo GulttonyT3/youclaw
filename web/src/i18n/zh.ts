@@ -199,6 +199,11 @@ export const zh: Translations = {
     betaUpdates: 'Beta 更新',
     betaUpdatesDesc: '接收预发布版本以提前测试',
     webModeHint: '当前为 Web 模式，更新由服务器管理。',
+    apiKeyDesc: '输入 Anthropic API Key 以使用 Claude Agent 功能。',
+    apiKeyShow: '显示',
+    apiKeyHide: '隐藏',
+    apiKeySave: '保存',
+    apiKeySaved: '已保存！',
   },
   system: {
     title: '系统监控',

@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 
 const envSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().min(1),
+  ANTHROPIC_API_KEY: z.string().optional(),
   PORT: z.coerce.number().default(3000),
   DATA_DIR: z.string().default('./data'),
   AGENT_MODEL: z.string().default('claude-sonnet-4-6'),
@@ -26,6 +26,11 @@ export function loadEnv(): EnvConfig {
   }
 
   _config = result.data
+
+  if (!_config.ANTHROPIC_API_KEY) {
+    console.warn('ANTHROPIC_API_KEY 未设置，Agent 功能将不可用。请在设置中配置 API Key。')
+  }
+
   return _config
 }
 

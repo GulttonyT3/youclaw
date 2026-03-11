@@ -5,6 +5,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, nativeTheme } fro
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import Store from "electron-store";
 import { setupUpdater, checkForUpdates, setAllowPrerelease } from "./updater.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,13 +15,23 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
+// 统一持久化存储
+const store = new Store({
+  defaults: {
+    theme: "system" as string,
+    allowPrerelease: false,
+    apiKey: "",
+  },
+});
+
 // ===== 后端直接集成（无 HTTP 端口） =====
 
 /** 获取后端编译产物目录 */
 function getBackendDir(): string {
   // __dirname = dist/electron/main/，向上 3 级 = 项目根目录
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "app", "dist", "src");
+    // asarUnpack 解包后的文件在 app.asar.unpacked/ 目录下
+    return path.join(process.resourcesPath, "app.asar.unpacked", "dist", "src");
   }
   return path.join(__dirname, "../../../dist/src");
 }
@@ -69,6 +80,12 @@ function loadDotEnv(): void {
 async function startEmbeddedBackend(): Promise<void> {
   // 加载 .env 文件
   loadDotEnv();
+
+  // 从 electron-store 注入 API Key（不覆盖 .env 中已有的值）
+  const storedApiKey = store.get("apiKey") as string;
+  if (storedApiKey && !process.env.ANTHROPIC_API_KEY) {
+    process.env.ANTHROPIC_API_KEY = storedApiKey;
+  }
 
   // 设置默认 DATA_DIR
   if (!process.env.DATA_DIR) {
@@ -298,49 +315,7 @@ async function startEmbeddedBackend(): Promise<void> {
 // 事件订阅管理
 const subscriptions = new Map<string, () => void>();
 
-// ===== 持久化工具 =====
-
-const settingsFilePath = path.join(app.getPath("userData"), "settings.json");
-
-function getSettings(): Record<string, unknown> {
-  try {
-    const data = fs.readFileSync(settingsFilePath, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return {};
-  }
-}
-
-function saveSetting(key: string, value: unknown): void {
-  const settings = getSettings();
-  settings[key] = value;
-  fs.writeFileSync(settingsFilePath, JSON.stringify(settings), "utf-8");
-}
-
-function getAllowPrereleaseValue(): boolean {
-  const settings = getSettings();
-  return settings.allowPrerelease === true;
-}
-
-// 主题持久化
-const themeFilePath = path.join(app.getPath("userData"), "theme.json");
-
-function getSavedTheme(): string {
-  try {
-    const data = fs.readFileSync(themeFilePath, "utf-8");
-    const parsed = JSON.parse(data);
-    if (["dark", "light", "system"].includes(parsed.theme)) {
-      return parsed.theme;
-    }
-  } catch {
-    // 文件不存在或无效，默认 system
-  }
-  return "system";
-}
-
-function saveTheme(theme: string): void {
-  fs.writeFileSync(themeFilePath, JSON.stringify({ theme }), "utf-8");
-}
+// ===== 持久化工具（使用 electron-store） =====
 
 function applyTheme(theme: string): void {
   if (theme === "system") {
@@ -516,24 +491,31 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   // 应用主题
-  const savedTheme = getSavedTheme();
+  const savedTheme = store.get("theme") as string;
   applyTheme(savedTheme);
 
   // 注册 IPC handlers（桌面功能）
   ipcMain.handle("get-version", () => app.getVersion());
-  ipcMain.handle("get-theme", () => getSavedTheme());
+  ipcMain.handle("get-theme", () => store.get("theme"));
   ipcMain.handle("set-theme", (_event, theme: string) => {
-    saveTheme(theme);
+    store.set("theme", theme);
     applyTheme(theme);
   });
-  ipcMain.handle("get-allow-prerelease", () => getAllowPrereleaseValue());
+  ipcMain.handle("get-allow-prerelease", () => store.get("allowPrerelease"));
   ipcMain.handle("set-allow-prerelease", (_event, value: boolean) => {
-    saveSetting("allowPrerelease", value);
+    store.set("allowPrerelease", value);
     setAllowPrerelease(value);
   });
 
+  // API Key IPC handlers
+  ipcMain.handle("get-api-key", () => store.get("apiKey"));
+  ipcMain.handle("set-api-key", (_event, key: string) => {
+    store.set("apiKey", key);
+    process.env.ANTHROPIC_API_KEY = key;
+  });
+
   // 配置更新
-  setAllowPrerelease(getAllowPrereleaseValue());
+  setAllowPrerelease(store.get("allowPrerelease") as boolean);
   setupUpdater();
 
   // UI

@@ -12,13 +12,17 @@ files:
   - prompts/**/*
   - resources/**/*
   - package.json
-  # 排除 claude-agent-sdk 中非当前平台的 vendor 二进制
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-linux"
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/arm64-linux"
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-win32"
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/arm64-win32"
-  # 排除 sharp native bindings（后端不需要图片处理）
   - "!node_modules/@img/sharp-*"
+
+asarUnpack:
+  - "dist/src/**/*"
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+  - "**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/**"
 
 mac:
   category: public.app-category.utilities

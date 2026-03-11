@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getTheme: () => ipcRenderer.invoke("get-theme"),
   setTheme: (theme: string) => ipcRenderer.invoke("set-theme", theme),
 
+  // ===== API Key =====
+  getApiKey: () => ipcRenderer.invoke("get-api-key"),
+  setApiKey: (key: string) => ipcRenderer.invoke("set-api-key", key),
+
   // ===== Updates =====
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
