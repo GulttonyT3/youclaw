@@ -257,6 +257,7 @@ export const zh: Translations = {
     allCategories: '全部',
     categoryAgent: 'Agent',
     categoryTool: '工具调用',
+    categoryTask: '定时任务',
     categorySystem: '系统',
     searchLogs: '搜索日志...',
     noLogs: '该日期无日志',

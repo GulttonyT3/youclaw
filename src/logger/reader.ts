@@ -6,7 +6,7 @@ export interface PinoLogEntry {
   level: number
   time: number
   msg: string
-  category?: string  // 'agent' | 'tool_use' | undefined(系统日志)
+  category?: string  // 'agent' | 'tool_use' | 'task' | undefined(系统日志)
   agentId?: string
   chatId?: string
   tool?: string

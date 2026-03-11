@@ -255,6 +255,7 @@ export const en = {
     allCategories: 'All',
     categoryAgent: 'Agent',
     categoryTool: 'Tool Use',
+    categoryTask: 'Cron Jobs',
     categorySystem: 'System',
     searchLogs: 'Search logs...',
     noLogs: 'No logs for this date',

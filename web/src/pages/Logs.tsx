@@ -21,6 +21,7 @@ const LEVEL_COLORS: Record<number, string> = {
 const CATEGORY_COLORS: Record<string, string> = {
   agent: 'bg-purple-500/20 text-purple-400',
   tool_use: 'bg-cyan-500/20 text-cyan-400',
+  task: 'bg-orange-500/20 text-orange-400',
   system: 'bg-zinc-500/20 text-zinc-400',
 }
 
@@ -103,6 +104,7 @@ export function Logs() {
     { value: '', label: t.logs.allCategories },
     { value: 'agent', label: t.logs.categoryAgent },
     { value: 'tool_use', label: t.logs.categoryTool },
+    { value: 'task', label: t.logs.categoryTask },
     { value: 'system', label: t.logs.categorySystem },
   ]
 
