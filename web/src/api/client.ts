@@ -225,6 +225,34 @@ export async function toggleSkill(name: string, enabled: boolean) {
   })
 }
 
+// ===== 技能市场 API =====
+
+export interface RecommendedSkill {
+  slug: string
+  displayName: string
+  summary: string
+  category: string
+  installed: boolean
+}
+
+export async function getRecommendedSkills() {
+  return apiFetch<RecommendedSkill[]>('/api/registry/recommended')
+}
+
+export async function installRecommendedSkill(slug: string) {
+  return apiFetch<{ ok: boolean; error?: string }>('/api/registry/install', {
+    method: 'POST',
+    body: JSON.stringify({ slug }),
+  })
+}
+
+export async function uninstallRecommendedSkill(slug: string) {
+  return apiFetch<{ ok: boolean; error?: string }>('/api/registry/uninstall', {
+    method: 'POST',
+    body: JSON.stringify({ slug }),
+  })
+}
+
 // ===== 浏览器 Profile API =====
 
 export interface BrowserProfileDTO {

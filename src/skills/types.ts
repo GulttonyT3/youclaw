@@ -53,6 +53,7 @@ export interface Skill {
   loadedAt: number         // 加载时间戳（ms）
   enabled: boolean         // 用户是否启用（默认 true）
   usable: boolean          // eligible && enabled
+  registryMeta?: SkillRegistryMeta // 从 .registry.json 读取的元数据
 }
 
 /** Agent Skills 视图 */
@@ -60,6 +61,14 @@ export interface AgentSkillsView {
   available: Skill[]       // 该 agent 可用的所有 skills
   enabled: Skill[]         // 已启用的（在 agent.yaml skills 列表中）
   eligible: Skill[]        // 通过资格检查的
+}
+
+/** Registry 元数据（.registry.json） */
+export interface SkillRegistryMeta {
+  source: string
+  slug: string
+  installedAt: string
+  displayName: string
 }
 
 /** Skills 配置 */

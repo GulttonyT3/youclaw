@@ -7,7 +7,7 @@ import { initDatabase, createTask, updateTask, deleteTask, getTasks, getTask } f
 import { EventBus } from './events/index.ts'
 import { AgentManager, AgentQueue, PromptBuilder, AgentCompiler, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
 import { MessageRouter, TelegramChannel } from './channel/index.ts'
-import { SkillsLoader, SkillsWatcher } from './skills/index.ts'
+import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { Scheduler } from './scheduler/index.ts'
 import { IpcWatcher, writeTasksSnapshot } from './ipc/index.ts'
@@ -38,6 +38,9 @@ async function main() {
     },
   })
   skillsWatcher.start()
+
+  // 5b. 创建 RegistryManager
+  const registryManager = new RegistryManager(skillsLoader)
 
   // 6. 创建 MemoryManager 和 MemoryIndexer
   const memoryManager = new MemoryManager()
@@ -191,7 +194,7 @@ async function main() {
   }
 
   // 17. 创建 HTTP 服务
-  const app = createApp({ agentManager, agentQueue, eventBus, router, skillsLoader, memoryManager, memoryIndexer, scheduler })
+  const app = createApp({ agentManager, agentQueue, eventBus, router, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler })
 
   const { serve } = await import('@hono/node-server')
   const server = serve({

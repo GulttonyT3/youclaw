@@ -10,10 +10,12 @@ import { createTasksRoutes } from './tasks.ts'
 import { createSystemRoutes } from './system.ts'
 import { createBrowserProfilesRoutes } from './browser-profiles.ts'
 import { createLogsRoutes } from './logs.ts'
+import { createRegistryRoutes } from './registry.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter } from '../channel/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
+import type { RegistryManager } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { MemoryIndexer } from '../memory/index.ts'
 import type { Scheduler } from '../scheduler/index.ts'
@@ -24,13 +26,14 @@ interface AppDeps {
   eventBus: EventBus
   router: MessageRouter
   skillsLoader: SkillsLoader
+  registryManager: RegistryManager
   memoryManager: MemoryManager
   memoryIndexer: MemoryIndexer | null
   scheduler: Scheduler
 }
 
 export function createApp(deps: AppDeps) {
-  const { agentManager, agentQueue, eventBus, router, skillsLoader, memoryManager, memoryIndexer, scheduler } = deps
+  const { agentManager, agentQueue, eventBus, router, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler } = deps
   const app = new Hono()
 
   // CORS — 允许 Vite dev server
@@ -50,6 +53,7 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createTasksRoutes(scheduler, agentManager, agentQueue))
   app.route('/api', createSystemRoutes(agentManager, eventBus))
   app.route('/api', createBrowserProfilesRoutes())
+  app.route('/api', createRegistryRoutes(registryManager))
   app.route('/api', createLogsRoutes())
 
   return app

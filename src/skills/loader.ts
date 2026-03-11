@@ -5,7 +5,7 @@ import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import { checkEligibility } from './eligibility.ts'
-import type { Skill, SkillsConfig, AgentSkillsView } from './types.ts'
+import type { Skill, SkillsConfig, AgentSkillsView, SkillRegistryMeta } from './types.ts'
 import { DEFAULT_SKILLS_CONFIG } from './types.ts'
 import type { AgentConfig } from '../agent/types.ts'
 import { getSkillSettings, setSkillEnabled as dbSetSkillEnabled } from '../db/index.ts'
@@ -237,6 +237,17 @@ export class SkillsLoader {
         const { frontmatter, content } = parseFrontmatter(raw)
         const { eligible, errors, detail } = checkEligibility(frontmatter)
 
+        // 读取 .registry.json 元数据（如有）
+        let registryMeta: SkillRegistryMeta | undefined
+        const registryFile = resolve(skillDir, '.registry.json')
+        if (existsSync(registryFile)) {
+          try {
+            registryMeta = JSON.parse(readFileSync(registryFile, 'utf-8'))
+          } catch {
+            // 解析失败忽略
+          }
+        }
+
         const skill: Skill = {
           name: frontmatter.name,
           source,
@@ -249,6 +260,7 @@ export class SkillsLoader {
           loadedAt: Date.now(),
           enabled: true,  // 默认启用，后续由 settings 覆盖
           usable: eligible,
+          registryMeta,
         }
 
         // 高优先级覆盖低优先级
