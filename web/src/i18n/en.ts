@@ -209,6 +209,9 @@ export const en = {
     apiKeyHide: 'Hide',
     apiKeySave: 'Save',
     apiKeySaved: 'Saved!',
+    baseUrlDesc: 'Custom API base URL. Leave empty to use the default Anthropic endpoint.',
+    baseUrlSave: 'Save',
+    baseUrlSaved: 'Saved!',
   },
   browser: {
     title: 'Browser Profiles',

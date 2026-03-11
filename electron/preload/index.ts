@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getApiKey: () => ipcRenderer.invoke("get-api-key"),
   setApiKey: (key: string) => ipcRenderer.invoke("set-api-key", key),
 
+  getBaseUrl: () => ipcRenderer.invoke("get-base-url"),
+  setBaseUrl: (url: string) => ipcRenderer.invoke("set-base-url", url),
+
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   getAllowPrerelease: () => ipcRenderer.invoke("get-allow-prerelease"),

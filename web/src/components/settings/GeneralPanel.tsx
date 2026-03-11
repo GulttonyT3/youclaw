@@ -18,12 +18,17 @@ export function GeneralPanel() {
   const [apiKey, setApiKey] = useState("")
   const [showApiKey, setShowApiKey] = useState(false)
   const [apiKeySaved, setApiKeySaved] = useState(false)
+  const [baseUrl, setBaseUrl] = useState("")
+  const [baseUrlSaved, setBaseUrlSaved] = useState(false)
 
   useEffect(() => {
     getSavedTheme().then(setTheme)
     if (isElectron) {
       getElectronAPI().getApiKey().then((key) => {
         if (key) setApiKey(key)
+      })
+      getElectronAPI().getBaseUrl().then((url) => {
+        if (url) setBaseUrl(url)
       })
     }
   }, [])
@@ -40,6 +45,13 @@ export function GeneralPanel() {
     await getElectronAPI().setApiKey(apiKey)
     setApiKeySaved(true)
     setTimeout(() => setApiKeySaved(false), 2000)
+  }
+
+  const handleSaveBaseUrl = async () => {
+    if (!isElectron) return
+    await getElectronAPI().setBaseUrl(baseUrl)
+    setBaseUrlSaved(true)
+    setTimeout(() => setBaseUrlSaved(false), 2000)
   }
 
   return (
@@ -73,6 +85,32 @@ export function GeneralPanel() {
               </div>
               <Button size="sm" onClick={handleSaveApiKey}>
                 {apiKeySaved ? t.settings.apiKeySaved : t.settings.apiKeySave}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Base URL 配置（仅 Electron 模式） */}
+      {isElectron && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+            API Base URL
+          </h3>
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground mb-2">
+              {t.settings.baseUrlDesc}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.anthropic.com"
+                className="flex-1"
+              />
+              <Button size="sm" onClick={handleSaveBaseUrl}>
+                {baseUrlSaved ? t.settings.baseUrlSaved : t.settings.baseUrlSave}
               </Button>
             </div>
           </div>

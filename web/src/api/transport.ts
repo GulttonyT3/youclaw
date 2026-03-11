@@ -17,9 +17,11 @@ export interface ElectronAPI {
   getTheme: () => Promise<string>
   setTheme: (theme: string) => Promise<void>
 
-  // API Key
+  // API Key & Base URL
   getApiKey: () => Promise<string>
   setApiKey: (key: string) => Promise<void>
+  getBaseUrl: () => Promise<string>
+  setBaseUrl: (url: string) => Promise<void>
 
   // Updates
   checkForUpdates: () => Promise<string | null>

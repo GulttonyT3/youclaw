@@ -1,4 +1,7 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { getEnv } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { getSession, saveSession } from '../db/index.ts'
@@ -6,6 +9,20 @@ import type { EventBus } from '../events/index.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 import type { McpServerConfig } from './schema.ts'
+
+// 将 asar 路径转换为 asar.unpacked 路径（非 asar 环境原样返回）
+function toUnpacked(p: string): string {
+  return p.replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
+}
+
+// Electron 打包后 cli.js 在 asar.unpacked 中，需要显式指定路径
+function resolveCliPath(): string {
+  const thisFile = fileURLToPath(import.meta.url)
+  const require = createRequire(import.meta.url)
+  const sdkEntry = require.resolve('@anthropic-ai/claude-agent-sdk')
+  const cliPath = resolve(dirname(sdkEntry), 'cli.js')
+  return toUnpacked(cliPath)
+}
 
 export class AgentRuntime {
   private config: AgentConfig
@@ -99,14 +116,24 @@ export class AgentRuntime {
     )
 
     // 构建 query 选项
+    // cwd 和 cli 路径都需要指向 asar.unpacked 中的真实文件系统路径
+    const isElectronPackaged = !!process.versions.electron && !(process as any).defaultApp
+    const cwd = toUnpacked(this.config.workspaceDir)
     const queryOptions: Record<string, unknown> = {
       model,
-      cwd: this.config.workspaceDir,
+      cwd,
       systemPrompt,
       abortController,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      pathToClaudeCodeExecutable: resolveCliPath(),
       ...(existingSessionId ? { resume: existingSessionId } : {}),
+      // Electron 打包后 PATH 中无 node，使用 Electron 自身 + ELECTRON_RUN_AS_NODE 作为 Node 运行时
+      ...(isElectronPackaged ? {
+        executable: process.execPath,
+        executableArgs: ['--no-warnings'],
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      } : {}),
     }
 
     // Phase 3: 子 Agent 配置

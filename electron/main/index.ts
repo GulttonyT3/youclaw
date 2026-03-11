@@ -4,6 +4,7 @@ delete process.env.CLAUDECODE;
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, nativeTheme } from "electron";
 import path from "path";
 import fs from "fs";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import Store from "electron-store";
 import { setupUpdater, checkForUpdates, setAllowPrerelease } from "./updater.js";
@@ -20,6 +21,7 @@ const store = new Store({
     theme: "system" as string,
     allowPrerelease: false,
     apiKey: "",
+    baseUrl: "",
     windowBounds: { x: undefined, y: undefined, width: 1400, height: 900 } as {
       x?: number;
       y?: number;
@@ -66,13 +68,33 @@ function loadDotEnv(): void {
   }
 }
 
+/** macOS 从 Finder/Dock 启动时 PATH 极度精简，需要从用户 shell 获取完整 PATH */
+function fixPath(): void {
+  if (process.platform !== "darwin" || !app.isPackaged) return;
+  try {
+    const shellPath = execSync("zsh -ilc 'echo $PATH' 2>/dev/null || bash -ilc 'echo $PATH' 2>/dev/null", {
+      encoding: "utf-8",
+    }).trim();
+    if (shellPath) {
+      process.env.PATH = shellPath;
+    }
+  } catch {
+    // 静默失败，保持原始 PATH
+  }
+}
+
 async function startEmbeddedBackend(): Promise<void> {
+  fixPath();
   loadDotEnv();
 
-  // Inject API key from electron-store if not already set via .env
+  // Inject API key and base URL from electron-store if not already set via .env
   const storedApiKey = store.get("apiKey") as string;
   if (storedApiKey && !process.env.ANTHROPIC_API_KEY) {
     process.env.ANTHROPIC_API_KEY = storedApiKey;
+  }
+  const storedBaseUrl = store.get("baseUrl") as string;
+  if (storedBaseUrl && !process.env.ANTHROPIC_BASE_URL) {
+    process.env.ANTHROPIC_BASE_URL = storedBaseUrl;
   }
 
   if (!process.env.DATA_DIR) {
@@ -462,6 +484,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("set-api-key", (_event, key: string) => {
     store.set("apiKey", key);
     process.env.ANTHROPIC_API_KEY = key;
+  });
+
+  ipcMain.handle("get-base-url", () => store.get("baseUrl"));
+  ipcMain.handle("set-base-url", (_event, url: string) => {
+    store.set("baseUrl", url);
+    if (url) {
+      process.env.ANTHROPIC_BASE_URL = url;
+    } else {
+      delete process.env.ANTHROPIC_BASE_URL;
+    }
   });
 
   setAllowPrerelease(store.get("allowPrerelease") as boolean);

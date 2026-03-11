@@ -356,25 +356,24 @@ export interface BrowserProfile {
 
 export function createBrowserProfile(profile: { id: string; name: string }): void {
   const db = getDatabase()
-  db.run(
-    'INSERT INTO browser_profiles (id, name, created_at) VALUES (?, ?, ?)',
-    [profile.id, profile.name, new Date().toISOString()]
-  )
+  db.prepare(
+    'INSERT INTO browser_profiles (id, name, created_at) VALUES (?, ?, ?)'
+  ).run(profile.id, profile.name, new Date().toISOString())
 }
 
 export function getBrowserProfiles(): BrowserProfile[] {
   const db = getDatabase()
-  return db.query('SELECT * FROM browser_profiles ORDER BY created_at DESC').all() as BrowserProfile[]
+  return db.prepare('SELECT * FROM browser_profiles ORDER BY created_at DESC').all() as BrowserProfile[]
 }
 
 export function getBrowserProfile(id: string): BrowserProfile | null {
   const db = getDatabase()
-  return (db.query('SELECT * FROM browser_profiles WHERE id = ?').get(id) as BrowserProfile | null) ?? null
+  return (db.prepare('SELECT * FROM browser_profiles WHERE id = ?').get(id) as BrowserProfile | null) ?? null
 }
 
 export function deleteBrowserProfile(id: string): void {
   const db = getDatabase()
-  db.run('DELETE FROM browser_profiles WHERE id = ?', [id])
+  db.prepare('DELETE FROM browser_profiles WHERE id = ?').run(id)
 }
 
 // ===== Skill 设置 =====
@@ -383,7 +382,7 @@ export type SkillSettings = Record<string, { enabled: boolean }>
 
 export function getSkillSettings(): SkillSettings {
   const db = getDatabase()
-  const row = db.query("SELECT value FROM kv_state WHERE key = 'skill_settings'").get() as { value: string } | null
+  const row = db.prepare("SELECT value FROM kv_state WHERE key = 'skill_settings'").get() as { value: string } | null
   if (!row) return {}
   try {
     return JSON.parse(row.value) as SkillSettings
@@ -396,8 +395,7 @@ export function setSkillEnabled(name: string, enabled: boolean): void {
   const db = getDatabase()
   const settings = getSkillSettings()
   settings[name] = { enabled }
-  db.run(
-    "INSERT OR REPLACE INTO kv_state (key, value) VALUES ('skill_settings', ?)",
-    [JSON.stringify(settings)]
-  )
+  db.prepare(
+    "INSERT OR REPLACE INTO kv_state (key, value) VALUES ('skill_settings', ?)"
+  ).run(JSON.stringify(settings))
 }

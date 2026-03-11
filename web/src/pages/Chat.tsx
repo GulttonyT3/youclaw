@@ -152,11 +152,11 @@ export function Chat() {
             <div className="flex-1 flex flex-col items-center justify-center px-4">
               <div className="max-w-xl w-full space-y-6">
                 <div className="text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--primary)]/10 to-[var(--primary)]/5 mb-2">
-                    <Sparkles className="h-7 w-7 text-[var(--primary)] opacity-80" />
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[primary]/10 to-[primary]/5 mb-2">
+                    <Sparkles className="h-7 w-7 text-[primary] opacity-80" />
                   </div>
                   <h1 className="text-2xl font-semibold">{t.chat.startConversation}</h1>
-                  <p className="text-sm text-[var(--muted-foreground)]">{t.chat.startHint}</p>
+                  <p className="text-sm text-[muted-foreground]">{t.chat.startHint}</p>
                 </div>
 
                 {agents.length > 1 && (
@@ -184,7 +184,7 @@ export function Chat() {
                     onKeyDown={handleKeyDown}
                     placeholder={t.chat.placeholder}
                     rows={3}
-                    className="pr-14 resize-none bg-[var(--card)] text-sm rounded-xl shadow-sm"
+                    className="pr-14 resize-none bg-[card] text-sm rounded-xl shadow-sm"
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -218,10 +218,10 @@ export function Chat() {
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{t.chat.assistant}</div>
-                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:rounded-xl prose-pre:bg-[var(--secondary)] prose-code:before:content-none prose-code:after:content-none">
+                        <div className="text-xs font-medium text-[muted-foreground] mb-1.5">{t.chat.assistant}</div>
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:rounded-xl prose-pre:bg-[secondary] prose-code:before:content-none prose-code:after:content-none">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
-                          <span className="inline-block w-1.5 h-4 bg-[var(--primary)]/60 animate-pulse ml-0.5 rounded-sm" />
+                          <span className="inline-block w-1.5 h-4 bg-[primary]/60 animate-pulse ml-0.5 rounded-sm" />
                         </div>
                       </div>
                     </div>
@@ -234,7 +234,7 @@ export function Chat() {
                           AI
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex items-center gap-2 text-[var(--muted-foreground)] text-sm pt-2">
+                      <div className="flex items-center gap-2 text-[muted-foreground] text-sm pt-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         {t.chat.thinking}
                       </div>
@@ -245,7 +245,7 @@ export function Chat() {
                 </div>
               </ScrollArea>
 
-              <div className="border-t border-border bg-[var(--background)]">
+              <div className="border-t border-border bg-[background]">
                 <div className="max-w-3xl mx-auto px-4 py-3">
                   <div className="relative flex items-end gap-2">
                     <Textarea
@@ -255,7 +255,7 @@ export function Chat() {
                       onKeyDown={handleKeyDown}
                       placeholder={t.chat.placeholder}
                       rows={1}
-                      className="resize-none bg-[var(--card)] text-sm rounded-xl pr-14 min-h-[42px]"
+                      className="resize-none bg-[card] text-sm rounded-xl pr-14 min-h-[42px]"
                     />
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -310,7 +310,7 @@ export function Chat() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t.chat.search}
-                className="h-8 pl-8 text-xs bg-[var(--background)]"
+                className="h-8 pl-8 text-xs bg-[background]"
               />
             </div>
           </div>
@@ -340,8 +340,8 @@ export function Chat() {
                         className={cn(
                           'group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors',
                           chatId === chat.chat_id
-                            ? 'bg-[var(--accent)] text-[var(--accent-foreground)]'
-                            : 'text-[var(--muted-foreground)] hover:bg-[var(--accent)]/50 hover:text-[var(--foreground)]'
+                            ? 'bg-[accent] text-[accent-foreground]'
+                            : 'text-[muted-foreground] hover:bg-[accent]/50 hover:text-[foreground]'
                         )}
                       >
                         <MessageSquare className="h-4 w-4 shrink-0 opacity-60" />
@@ -352,7 +352,7 @@ export function Chat() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--background)] transition-opacity shrink-0"
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[background] transition-opacity shrink-0"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreHorizontal className="h-3.5 w-3.5" />
@@ -407,19 +407,19 @@ function MessageBubble({ message, t }: { message: Message; t: any }) {
         </AvatarFallback>
       </Avatar>
       <div className={cn('flex-1 min-w-0', isUser && 'flex flex-col items-end')}>
-        <div className="text-xs font-medium text-[var(--muted-foreground)] mb-1.5">
+        <div className="text-xs font-medium text-[muted-foreground] mb-1.5">
           {isUser ? t.chat.you : t.chat.assistant}
           <span className="ml-2 text-[10px] opacity-60">
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
         {isUser ? (
-          <div className="inline-block bg-[var(--primary)] text-[var(--primary-foreground)] rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%]">
+          <div className="inline-block bg-[primary] text-[primary-foreground] rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%]">
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
           </div>
         ) : (
           <div className="relative">
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:rounded-xl prose-pre:bg-[var(--secondary)] prose-code:before:content-none prose-code:after:content-none">
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:rounded-xl prose-pre:bg-[secondary] prose-code:before:content-none prose-code:after:content-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -428,7 +428,7 @@ function MessageBubble({ message, t }: { message: Message; t: any }) {
                       <pre {...props}>{children}</pre>
                       <button
                         onClick={() => handleCopy(message.content)}
-                        className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--background)]/80 opacity-0 group-hover/code:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 p-1.5 rounded-md bg-[background]/80 opacity-0 group-hover/code:opacity-100 transition-opacity"
                       >
                         {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                       </button>
@@ -442,7 +442,7 @@ function MessageBubble({ message, t }: { message: Message; t: any }) {
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => handleCopy(message.content)}
-                    className="p-1 rounded hover:bg-[var(--accent)] text-[var(--muted-foreground)] transition-colors"
+                    className="p-1 rounded hover:bg-[accent] text-[muted-foreground] transition-colors"
                   >
                     {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>

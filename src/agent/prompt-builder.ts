@@ -153,7 +153,7 @@ export class PromptBuilder {
     if (!this.skillsLoader) return null
 
     const skills = this.skillsLoader.loadSkillsForAgent(config)
-    const eligibleSkills = skills.filter((s) => s.usable)
+    const eligibleSkills = skills.filter((s) => s.eligible)
 
     if (eligibleSkills.length === 0) return null
 

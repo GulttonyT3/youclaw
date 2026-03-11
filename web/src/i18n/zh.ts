@@ -211,6 +211,9 @@ export const zh: Translations = {
     apiKeyHide: '隐藏',
     apiKeySave: '保存',
     apiKeySaved: '已保存！',
+    baseUrlDesc: '自定义 API 地址。留空则使用 Anthropic 默认端点。',
+    baseUrlSave: '保存',
+    baseUrlSaved: '已保存！',
   },
   browser: {
     title: '浏览器 Profile',

@@ -23,7 +23,10 @@ asarUnpack:
   - "**/better-sqlite3/**"
   - "**/bindings/**"
   - "**/file-uri-to-path/**"
-  - "**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/**"
+  - "**/node_modules/@anthropic-ai/claude-agent-sdk/**"
+  - "agents/**"
+  - "skills/**"
+  - "prompts/**"
 
 mac:
   category: public.app-category.utilities

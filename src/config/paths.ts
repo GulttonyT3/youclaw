@@ -8,6 +8,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const isCompiledBuild = __dirname.replace(/\\/g, '/').includes('/dist/src/')
 export const ROOT_DIR = resolve(__dirname, isCompiledBuild ? '../../..' : '../..')
 
+// Electron 打包后 asar 内的文件对子进程不可见，
+// asarUnpack 的资源实际在 app.asar.unpacked/ 目录下
+const UNPACKED_ROOT = ROOT_DIR.replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
+
 export function getPaths() {
   const env = getEnv()
   const dataDir = resolve(ROOT_DIR, env.DATA_DIR)
@@ -16,9 +20,9 @@ export function getPaths() {
     root: ROOT_DIR,
     data: dataDir,
     db: resolve(dataDir, 'youclaw.db'),
-    agents: resolve(ROOT_DIR, 'agents'),
-    skills: resolve(ROOT_DIR, 'skills'),
-    prompts: resolve(ROOT_DIR, 'prompts'),
+    agents: resolve(UNPACKED_ROOT, 'agents'),
+    skills: resolve(UNPACKED_ROOT, 'skills'),
+    prompts: resolve(UNPACKED_ROOT, 'prompts'),
     browserProfiles: resolve(dataDir, 'browser-profiles'),
   }
 }
