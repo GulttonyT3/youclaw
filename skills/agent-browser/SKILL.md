@@ -8,7 +8,7 @@ tags:
   - automation
 priority: normal
 install:
-  npm: "npm install -g agent-browser"
+  bun: "bun install -g agent-browser"
 ---
 
 # Browser Automation with agent-browser

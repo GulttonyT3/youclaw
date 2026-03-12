@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * 构建 Bun sidecar 可执行文件
  *
  * 用法：
- *   node scripts/build-sidecar.mjs          # 仅当前平台
- *   node scripts/build-sidecar.mjs --all    # 所有平台
+ *   bun scripts/build-sidecar.mjs          # 仅当前平台
+ *   bun scripts/build-sidecar.mjs --all    # 所有平台
  */
 
 import { execSync } from 'node:child_process'

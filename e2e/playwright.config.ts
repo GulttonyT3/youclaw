@@ -19,7 +19,7 @@ export default defineConfig({
       cwd: '..',
     },
     {
-      command: 'npm run dev',
+      command: 'bun run dev',
       port: 5173,
       reuseExistingServer: true,
       cwd: '../web',

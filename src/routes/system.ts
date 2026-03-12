@@ -39,7 +39,7 @@ export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBu
     return c.json({
       uptime: Math.floor(process.uptime()),
       platform: process.platform,
-      nodeVersion: `node ${process.version}`,
+      nodeVersion: `bun ${Bun.version}`,
       agents: {
         total: agents.length,
         active: activeCount,
