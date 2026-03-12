@@ -19,9 +19,12 @@ export const en = {
     system: 'System',
     logs: 'Logs',
   },
-  topbar: {
-    title: 'YouClaw',
-    running: 'Running',
+  sidebar: {
+    collapse: 'Collapse sidebar',
+    expand: 'Expand sidebar',
+    newChat: 'New chat',
+    search: 'Search chats...',
+    more: 'More',
   },
   chat: {
     newChat: 'New Chat',
@@ -39,7 +42,10 @@ export const en = {
     you: 'You',
     assistant: 'Assistant',
     selectChat: 'Select a chat or start a new one',
-    toolUsing: 'Using tool',
+    toolUsing: 'Using {tool}...',
+    toolUsed: 'Used {count} tools',
+    welcome: 'What can I help you with?',
+    regenerate: 'Regenerate',
     stopGenerating: 'Stop generating',
     copyCode: 'Copy',
     copied: 'Copied!',

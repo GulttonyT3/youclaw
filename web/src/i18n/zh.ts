@@ -21,9 +21,12 @@ export const zh: Translations = {
     system: '系统',
     logs: '日志',
   },
-  topbar: {
-    title: 'YouClaw',
-    running: '运行中',
+  sidebar: {
+    collapse: '收起侧栏',
+    expand: '展开侧栏',
+    newChat: '新建对话',
+    search: '搜索对话...',
+    more: '更多',
   },
   chat: {
     newChat: '新对话',
@@ -41,7 +44,10 @@ export const zh: Translations = {
     you: '你',
     assistant: '助手',
     selectChat: '选择一个对话或开始新对话',
-    toolUsing: '正在使用工具',
+    toolUsing: '正在使用 {tool}...',
+    toolUsed: '使用了 {count} 个工具',
+    welcome: '有什么可以帮你的？',
+    regenerate: '重新生成',
     stopGenerating: '停止生成',
     copyCode: '复制',
     copied: '已复制！',
