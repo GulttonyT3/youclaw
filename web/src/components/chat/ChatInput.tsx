@@ -29,9 +29,8 @@ export function ChatInput() {
   };
 
   return (
-    <div className="bg-background">
-      <div className="max-w-3xl mx-auto px-4 py-3">
-        <PromptInput onSubmit={handleSubmit}>
+    <div className="bg-background px-4 py-3">
+      <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             placeholder={t.chat.placeholder}
             data-testid="chat-input"
@@ -82,7 +81,6 @@ export function ChatInput() {
             />
           </PromptInputFooter>
         </PromptInput>
-      </div>
     </div>
   );
 }

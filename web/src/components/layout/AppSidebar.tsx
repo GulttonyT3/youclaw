@@ -127,7 +127,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
               <PanelLeft className="h-4 w-4" />
             </button>
           ) : (
-            <span className="text-sm font-semibold tracking-tight whitespace-nowrap ml-1.5 mr-1">
+            <span className="text-md font-semibold tracking-tight whitespace-nowrap ml-1.5 mr-1">
               YouClaw
             </span>
           )}
