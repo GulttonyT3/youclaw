@@ -43,8 +43,8 @@ export class MessageRouter {
   async handleInbound(message: InboundMessage): Promise<void> {
     const logger = getLogger()
 
-    // 推断 channel 类型（优先用消息自带的 channel 字段）
-    const channel = message.channel ?? (message.chatId.startsWith('tg:') ? 'telegram' : 'web')
+    // 推断 channel 类型（优先用消息自带的 channel 字段，否则遍历已注册 channels 匹配）
+    const channel = message.channel ?? this.inferChannel(message.chatId)
 
     // 优先使用消息中指定的 agentId（Web API 场景），否则按 chatId 路由
     const managed = message.agentId
@@ -99,6 +99,7 @@ export class MessageRouter {
         message.chatId,
         contentForAgent,
         requestedSkills.length > 0 ? requestedSkills : undefined,
+        message.browserProfileId,
       )
 
       // 存储 bot 回复
@@ -124,6 +125,14 @@ export class MessageRouter {
     } catch (err) {
       logger.error({ error: err, chatId: message.chatId }, '消息处理失败')
     }
+  }
+
+  // 根据 chatId 前缀推断 channel 名称
+  private inferChannel(chatId: string): string {
+    for (const ch of this.channels) {
+      if (ch.ownsChatId(chatId)) return ch.name
+    }
+    return 'web'
   }
 
   // 处理出站消息（发送到对应 channel）

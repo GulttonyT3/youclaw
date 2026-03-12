@@ -48,7 +48,7 @@ export function useChat(agentId: string) {
     }
   })
 
-  const send = useCallback(async (prompt: string) => {
+  const send = useCallback(async (prompt: string, browserProfileId?: string) => {
     // 添加用户消息到列表
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
@@ -60,7 +60,7 @@ export function useChat(agentId: string) {
     setStreamingText('')
 
     try {
-      const result = await sendMessage(agentId, prompt, chatId ?? undefined)
+      const result = await sendMessage(agentId, prompt, chatId ?? undefined, browserProfileId)
       if (!chatId) {
         setChatId(result.chatId)
       }

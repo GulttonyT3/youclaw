@@ -11,7 +11,7 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
   // POST /api/agents/:id/message — 发消息给 agent
   messages.post('/agents/:id/message', async (c) => {
     const agentId = c.req.param('id')
-    const body = await c.req.json<{ prompt: string; chatId?: string; skills?: string[] }>()
+    const body = await c.req.json<{ prompt: string; chatId?: string; skills?: string[]; browserProfileId?: string }>()
 
     if (!body.prompt) {
       return c.json({ error: 'prompt is required' }, 400)
@@ -37,6 +37,7 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
       isGroup: false,
       agentId,
       requestedSkills: body.skills,
+      browserProfileId: body.browserProfileId,
     }
 
     // 后台处理（不阻塞请求）

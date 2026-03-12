@@ -23,10 +23,10 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 }
 
 // 发消息给 agent
-export async function sendMessage(agentId: string, prompt: string, chatId?: string) {
+export async function sendMessage(agentId: string, prompt: string, chatId?: string, browserProfileId?: string) {
   return apiFetch<{ chatId: string; status: string }>(`/api/agents/${agentId}/message`, {
     method: 'POST',
-    body: JSON.stringify({ prompt, chatId }),
+    body: JSON.stringify({ prompt, chatId, browserProfileId }),
   })
 }
 

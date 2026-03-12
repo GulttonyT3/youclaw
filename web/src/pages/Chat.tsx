@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useChat, type Message } from '../hooks/useChat'
-import { getChats, getAgents, deleteChat as deleteChatApi } from '../api/client'
+import { getChats, getAgents, deleteChat as deleteChatApi, getBrowserProfiles, type BrowserProfileDTO } from '../api/client'
 import {
   Send,
   Plus,
@@ -15,6 +15,7 @@ import {
   Copy,
   Check,
   Square,
+  Globe,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
@@ -80,6 +81,8 @@ export function Chat() {
   const [input, setInput] = useState('')
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [browserProfiles, setBrowserProfiles] = useState<BrowserProfileDTO[]>([])
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // 加载 agents
@@ -87,6 +90,11 @@ export function Chat() {
     getAgents()
       .then((list) => setAgents(list.map((a) => ({ id: a.id, name: a.name }))))
       .catch(() => {})
+  }, [])
+
+  // 加载浏览器 Profiles
+  useEffect(() => {
+    getBrowserProfiles().then(setBrowserProfiles).catch(() => {})
   }, [])
 
   // 加载聊天列表
@@ -108,7 +116,7 @@ export function Chat() {
     const text = input.trim()
     if (!text || isProcessing) return
     setInput('')
-    send(text)
+    send(text, selectedProfileId ?? undefined)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -153,7 +161,7 @@ export function Chat() {
         {/* 左面板 — 消息区或新建欢迎页 */}
         <div className="flex-1 flex flex-col min-w-0">
           {isNewChat ? (
-            <div className="flex-1 flex flex-col items-center justify-center px-4">
+            <div className="flex-1 flex flex-col items-center justify-center px-4" data-testid="chat-welcome">
               <div className="max-w-xl w-full space-y-6">
                 <div className="text-center space-y-3">
                   <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 mb-2">
@@ -182,6 +190,31 @@ export function Chat() {
                 )}
 
                 <div className="relative">
+                  {browserProfiles.length > 0 && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className={cn('gap-1.5 h-7 text-xs', selectedProfileId && 'text-primary')}>
+                            <Globe className="h-3.5 w-3.5" />
+                            {selectedProfileId
+                              ? browserProfiles.find(p => p.id === selectedProfileId)?.name ?? t.chat.browserProfile
+                              : t.chat.browserProfile}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => setSelectedProfileId(null)}>
+                            {t.chat.noBrowserProfile}
+                          </DropdownMenuItem>
+                          {browserProfiles.map(p => (
+                            <DropdownMenuItem key={p.id} onClick={() => setSelectedProfileId(p.id)}>
+                              {p.name}
+                              {selectedProfileId === p.id && <Check className="h-3.5 w-3.5 ml-auto" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                   <Textarea
                     ref={textareaRef}
                     data-testid="chat-input"
@@ -218,7 +251,7 @@ export function Chat() {
                   ))}
 
                   {streamingText && (
-                    <AIMessage from="assistant">
+                    <AIMessage from="assistant" data-testid="message-streaming">
                       <div className="flex gap-3 py-3">
                         <Avatar className="h-8 w-8 mt-0.5">
                           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
@@ -236,7 +269,7 @@ export function Chat() {
                   )}
 
                   {isProcessing && !streamingText && (
-                    <div className="flex gap-3 py-3">
+                    <div className="flex gap-3 py-3" data-testid="chat-thinking">
                       <Avatar className="h-8 w-8 mt-0.5">
                         <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
                           AI
@@ -254,6 +287,31 @@ export function Chat() {
 
               <div className="border-t border-border bg-background">
                 <div className="max-w-3xl mx-auto px-4 py-3">
+                  {browserProfiles.length > 0 && (
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className={cn('gap-1.5 h-7 text-xs', selectedProfileId && 'text-primary')}>
+                            <Globe className="h-3.5 w-3.5" />
+                            {selectedProfileId
+                              ? browserProfiles.find(p => p.id === selectedProfileId)?.name ?? t.chat.browserProfile
+                              : t.chat.browserProfile}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => setSelectedProfileId(null)}>
+                            {t.chat.noBrowserProfile}
+                          </DropdownMenuItem>
+                          {browserProfiles.map(p => (
+                            <DropdownMenuItem key={p.id} onClick={() => setSelectedProfileId(p.id)}>
+                              {p.name}
+                              {selectedProfileId === p.id && <Check className="h-3.5 w-3.5 ml-auto" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                   <div className="relative flex items-end gap-2">
                     <Textarea
                       ref={textareaRef}
@@ -363,6 +421,7 @@ export function Chat() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
+                              data-testid="chat-item-menu"
                               className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-background transition-opacity shrink-0"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -371,6 +430,7 @@ export function Chat() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-36">
                             <DropdownMenuItem
+                              data-testid="chat-item-delete"
                               className="text-red-400 focus:text-red-400"
                               onClick={(e) => handleDeleteChat(chat.chat_id, e as any)}
                             >

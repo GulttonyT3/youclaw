@@ -42,6 +42,8 @@ export const en = {
     stopGenerating: 'Stop generating',
     copyCode: 'Copy',
     copied: 'Copied!',
+    browserProfile: 'Browser Profile',
+    noBrowserProfile: 'None',
   },
   agents: {
     title: 'Agents',

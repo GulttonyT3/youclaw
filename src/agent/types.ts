@@ -20,6 +20,7 @@ export interface ProcessParams {
   prompt: string
   agentId: string
   requestedSkills?: string[]
+  browserProfileId?: string
 }
 
 export interface AgentInstance {

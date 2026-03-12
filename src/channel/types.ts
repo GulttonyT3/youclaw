@@ -10,6 +10,7 @@ export interface InboundMessage {
   agentId?: string        // 指定目标 agent（Web API 场景）
   tags?: string[]         // web 前端传入的路由标签
   requestedSkills?: string[]  // 显式请求的 skills
+  browserProfileId?: string   // 动态覆盖 agent.yaml 的 browserProfile
 }
 
 export interface Channel {

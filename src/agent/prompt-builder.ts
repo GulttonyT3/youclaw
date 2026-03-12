@@ -23,7 +23,7 @@ export class PromptBuilder {
   build(
     workspaceDir: string,
     config: AgentConfig,
-    context?: { agentId: string; chatId: string; requestedSkills?: string[] },
+    context?: { agentId: string; chatId: string; requestedSkills?: string[]; browserProfileId?: string },
   ): string {
     const parts: string[] = []
 
@@ -50,7 +50,7 @@ export class PromptBuilder {
     }
 
     // 注入浏览器 Profile 上下文
-    const browserCtx = this.buildBrowserProfileContext(config)
+    const browserCtx = this.buildBrowserProfileContext(config, context?.browserProfileId)
     if (browserCtx) {
       parts.push(browserCtx)
     }
@@ -142,9 +142,10 @@ export class PromptBuilder {
   /**
    * 构建浏览器 Profile 上下文
    */
-  private buildBrowserProfileContext(config: AgentConfig): string | null {
-    if (!config.browserProfile) return null
-    const profile = getBrowserProfile(config.browserProfile)
+  private buildBrowserProfileContext(config: AgentConfig, overrideBrowserProfileId?: string): string | null {
+    const profileId = overrideBrowserProfileId ?? config.browserProfile
+    if (!profileId) return null
+    const profile = getBrowserProfile(profileId)
     if (!profile) return null
     const profileDir = resolve(getPaths().browserProfiles, profile.id)
     return `## Browser Profile\n\nWhen using agent-browser, ALWAYS include \`--profile ${profileDir}\` to use the persistent browser profile "${profile.name}". Example:\n\n\`\`\`bash\nagent-browser --profile ${profileDir} open https://example.com\n\`\`\``

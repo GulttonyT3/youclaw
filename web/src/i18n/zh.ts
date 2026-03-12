@@ -44,6 +44,8 @@ export const zh: Translations = {
     stopGenerating: '停止生成',
     copyCode: '复制',
     copied: '已复制！',
+    browserProfile: '浏览器 Profile',
+    noBrowserProfile: '不使用',
   },
   agents: {
     title: 'Agents',
