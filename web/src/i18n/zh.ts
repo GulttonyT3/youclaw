@@ -20,10 +20,6 @@ export const zh: Translations = {
     system: '系统',
     logs: '日志',
   },
-  topbar: {
-    title: 'YouClaw',
-    running: '运行中',
-  },
   sidebar: {
     collapse: '收起侧栏',
     expand: '展开侧栏',

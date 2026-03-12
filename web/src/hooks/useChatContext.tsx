@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useChat, type Message, type ToolUseItem } from './useChat'
 import { getChats, getAgents, deleteChat as deleteChatApi } from '../api/client'
 import type { ChatItem } from '../lib/chat-utils'
@@ -61,11 +61,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { refreshChats() }, [chat.chatId, refreshChats])
 
+  const chatRef = useRef(chat)
+  chatRef.current = chat
+
   const deleteChat = useCallback(async (chatIdToDelete: string) => {
     await deleteChatApi(chatIdToDelete)
-    if (chat.chatId === chatIdToDelete) chat.newChat()
+    if (chatRef.current.chatId === chatIdToDelete) chatRef.current.newChat()
     refreshChats()
-  }, [chat, refreshChats])
+  }, [refreshChats])
 
   return (
     <ChatContext.Provider value={{

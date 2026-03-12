@@ -57,8 +57,6 @@ export function useSSE(chatId: string | null, onEvent: (event: SSEEvent) => void
 
     // Web 模式：使用 EventSource（SSE）
     let es: EventSource | null = null
-    let cancelled = false
-
     es = new EventSource(`/api/stream/${encodeURIComponent(chatId)}`)
     eventSourceRef.current = es
 
@@ -81,7 +79,6 @@ export function useSSE(chatId: string | null, onEvent: (event: SSEEvent) => void
     }
 
     return () => {
-      cancelled = true
       es?.close()
       eventSourceRef.current = null
     }

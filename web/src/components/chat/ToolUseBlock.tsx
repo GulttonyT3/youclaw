@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ChevronRight, ChevronDown, Wrench, Loader2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import type { ToolUseItem } from '@/hooks/useChat'
 import { useI18n } from '@/i18n'
 

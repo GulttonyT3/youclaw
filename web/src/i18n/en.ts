@@ -18,10 +18,6 @@ export const en = {
     system: 'System',
     logs: 'Logs',
   },
-  topbar: {
-    title: 'YouClaw',
-    running: 'Running',
-  },
   sidebar: {
     collapse: 'Collapse sidebar',
     expand: 'Expand sidebar',

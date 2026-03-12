@@ -79,10 +79,11 @@ export function useChat(agentId: string) {
   })
 
   useEffect(() => {
+    if (chatStatus === 'error') return // 保持 error 状态直到 setTimeout 重置
     if (isProcessing && !streamingText) setChatStatus('submitted')
     else if (isProcessing && streamingText) setChatStatus('streaming')
     else setChatStatus('ready')
-  }, [isProcessing, streamingText])
+  }, [isProcessing, streamingText, chatStatus])
 
   const send = useCallback(async (prompt: string) => {
     // 添加用户消息到列表
