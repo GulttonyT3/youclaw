@@ -407,15 +407,6 @@ function createAppMenu(): void {
   }
 }
 
-function getTitleBarOverlay() {
-  const isDark = nativeTheme.shouldUseDarkColors;
-  return {
-    color: isDark ? "#1a1a1a" : "#ffffff",
-    symbolColor: isDark ? "#fafafa" : "#171717",
-    height: 48,
-  };
-}
-
 function createWindow(): void {
   const isMac = process.platform === "darwin";
   const isWin = process.platform === "win32";
@@ -439,7 +430,6 @@ function createWindow(): void {
     ...(isWin
       ? {
           titleBarStyle: "hidden",
-          titleBarOverlay: getTitleBarOverlay(),
         }
       : {}),
     webPreferences: {
@@ -455,18 +445,14 @@ function createWindow(): void {
   };
   mainWindow.on("resized", saveBounds);
   mainWindow.on("moved", saveBounds);
+  mainWindow.on("maximize", () => mainWindow?.webContents.send("window-maximize-change", true));
+  mainWindow.on("unmaximize", () => mainWindow?.webContents.send("window-maximize-change", false));
 
   mainWindow.loadFile(path.join(__dirname, "../../../dist/renderer/index.html"));
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
-
-  if (isWin) {
-    nativeTheme.on("updated", () => {
-      mainWindow?.setTitleBarOverlay(getTitleBarOverlay());
-    });
-  }
 
   mainWindow.on("close", (event) => {
     if (!isQuitting) {
@@ -485,13 +471,19 @@ app.whenReady().then(async () => {
   applyTheme(savedTheme);
 
   ipcMain.handle("get-version", () => app.getVersion());
+  ipcMain.handle("window-minimize", () => mainWindow?.minimize());
+  ipcMain.handle("window-maximize", () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+  });
+  ipcMain.handle("window-close", () => mainWindow?.close());
   ipcMain.handle("get-theme", () => store.get("theme"));
   ipcMain.handle("set-theme", (_event, theme: string) => {
     store.set("theme", theme);
     applyTheme(theme);
-    if (process.platform === "win32") {
-      mainWindow?.setTitleBarOverlay(getTitleBarOverlay());
-    }
   });
   ipcMain.handle("get-allow-prerelease", () => store.get("allowPrerelease"));
   ipcMain.handle("set-allow-prerelease", (_event, value: boolean) => {
