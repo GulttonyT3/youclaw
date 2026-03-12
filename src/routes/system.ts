@@ -1,13 +1,13 @@
 import { Hono } from 'hono'
 import { existsSync, statSync } from 'node:fs'
 import { getPaths } from '../config/paths.ts'
-import { getEnv } from '../config/env.ts'
 import type { AgentManager } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
+import type { MessageRouter } from '../channel/index.ts'
 
 const startedAt = new Date().toISOString()
 
-export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBus) {
+export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBus, router: MessageRouter) {
   // suppress unused parameter lint — eventBus reserved for future use
   void eventBus
 
@@ -16,7 +16,6 @@ export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBu
   // GET /api/status — 系统状态信息
   system.get('/status', async (c) => {
     const paths = getPaths()
-    const env = getEnv()
 
     // Agent 统计
     const agents = agentManager.getAgents()
@@ -31,8 +30,11 @@ export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBu
       dbSizeBytes = statSync(paths.db).size
     }
 
-    // Telegram 连接状态
-    const telegramConnected = Boolean(env.TELEGRAM_BOT_TOKEN)
+    // Channel 连接状态
+    const channels = router.getChannelStatuses()
+
+    // 向后兼容：保留 telegram 字段
+    const telegramConnected = channels.some((ch) => ch.name === 'telegram' && ch.connected)
 
     return c.json({
       uptime: Math.floor(process.uptime()),
@@ -45,6 +47,7 @@ export function createSystemRoutes(agentManager: AgentManager, eventBus: EventBu
       telegram: {
         connected: telegramConnected,
       },
+      channels,
       database: {
         path: paths.db,
         sizeBytes: dbSizeBytes,

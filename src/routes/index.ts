@@ -10,6 +10,7 @@ import { createTasksRoutes } from './tasks.ts'
 import { createSystemRoutes } from './system.ts'
 import { createBrowserProfilesRoutes } from './browser-profiles.ts'
 import { createLogsRoutes } from './logs.ts'
+import { createChannelsRoutes } from './channels.ts'
 import { createRegistryRoutes } from './registry.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
@@ -51,7 +52,8 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createSkillsRoutes(skillsLoader, agentManager))
   app.route('/api', createMemoryRoutes(memoryManager, agentManager, memoryIndexer))
   app.route('/api', createTasksRoutes(scheduler, agentManager, agentQueue))
-  app.route('/api', createSystemRoutes(agentManager, eventBus))
+  app.route('/api', createSystemRoutes(agentManager, eventBus, router))
+  app.route('/api', createChannelsRoutes(router))
   app.route('/api', createBrowserProfilesRoutes())
   app.route('/api', createRegistryRoutes(registryManager))
   app.route('/api', createLogsRoutes())
