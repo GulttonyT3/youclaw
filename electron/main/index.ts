@@ -5,7 +5,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, nativeTheme } fro
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import Store from "electron-store";
 import { setupUpdater, checkForUpdates, setAllowPrerelease } from "./updater.js";
 
@@ -40,7 +40,7 @@ function getBackendDir(): string {
 
 async function importBackend(name: string): Promise<any> {
   const modulePath = path.join(getBackendDir(), name);
-  return import(modulePath);
+  return import(pathToFileURL(modulePath).href);
 }
 
 /** Load .env file manually (Bun auto-loads, Electron/Node does not) */
@@ -407,6 +407,15 @@ function createAppMenu(): void {
   }
 }
 
+function getTitleBarOverlay() {
+  const isDark = nativeTheme.shouldUseDarkColors;
+  return {
+    color: isDark ? "#0a0a0a" : "#ffffff",
+    symbolColor: isDark ? "#f9f9f9" : "#0a0a0a",
+    height: 47,
+  };
+}
+
 function createWindow(): void {
   const isMac = process.platform === "darwin";
   const isWin = process.platform === "win32";
@@ -430,11 +439,7 @@ function createWindow(): void {
     ...(isWin
       ? {
           titleBarStyle: "hidden",
-          titleBarOverlay: {
-            color: "#1a1a2e",
-            symbolColor: "#e5e7eb",
-            height: 48,
-          },
+          titleBarOverlay: getTitleBarOverlay(),
         }
       : {}),
     webPreferences: {
@@ -450,6 +455,9 @@ function createWindow(): void {
   };
   mainWindow.on("resized", saveBounds);
   mainWindow.on("moved", saveBounds);
+  mainWindow.on("maximize", () => mainWindow?.webContents.send("window-maximize-change", true));
+  mainWindow.on("unmaximize", () => mainWindow?.webContents.send("window-maximize-change", false));
+  nativeTheme.on("updated", () => mainWindow?.setTitleBarOverlay(getTitleBarOverlay()));
 
   mainWindow.loadFile(path.join(__dirname, "../../../dist/renderer/index.html"));
 

@@ -25,7 +25,7 @@ export function Topbar({ onOpenSettings }: TopbarProps) {
       className="h-12 border-b border-border flex items-center px-4 shrink-0"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* macOS: 给交通灯按钮留出空间（x:16 + 按钮宽约70px） */}
+      {/* macOS: 给交通灯按钮留出空间 */}
       {isMac && <div className="w-20 shrink-0" />}
 
       <div className="flex items-center gap-2">
@@ -56,7 +56,7 @@ export function Topbar({ onOpenSettings }: TopbarProps) {
         >
           <Settings className="h-4 w-4" />
         </button>
-        {/* Windows: 给 titleBarOverlay 窗口控制按钮留出空间 */}
+        {/* Windows: 给原生 titleBarOverlay 留出空间 */}
         {isWin && <div className="w-32 shrink-0" />}
       </div>
     </header>

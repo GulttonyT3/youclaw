@@ -40,4 +40,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("open-settings", handler);
     return () => ipcRenderer.removeListener("open-settings", handler);
   },
+
 });
