@@ -301,6 +301,7 @@ export type Message = {
 - 新增 `chatStatus` 派生状态：
   - `isProcessing && !streamingText` → `'submitted'`
   - `isProcessing && streamingText` → `'streaming'`
+  - 刚收到 error 事件后短暂（2s）→ `'error'`（显示 X 图标，然后回落到 ready）
   - 其他 → `'ready'`
 
 #### 4.3 useSSE hook
@@ -308,6 +309,8 @@ export type Message = {
 - Web SSE 路径：`tool_use` 事件监听已存在（line 70），无需改动
 - Electron IPC 路径：事件通过 `onAgentEvent` 透传，`type` 字段会保留，无需改动
 - 注意：两种路径都能正确传递 `tool_use` 事件，已验证
+- **类型修改**：`SSEEvent` 类型需新增 `input?: string` 字段，以便 useChat 构建 ToolUseItem 时有类型安全保障
+- **Electron stop() 注意**：当前 `useSSE.close()` 只关闭 Web 的 EventSource，Electron IPC 路径的清理由 effect 卸载处理。实现 `stop()` 时需在 Electron 路径中也调用 `unsubscribeEvents` + `removeListener`
 
 ### 5. 删除对话改进
 
