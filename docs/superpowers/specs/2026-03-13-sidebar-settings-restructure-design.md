@@ -51,13 +51,41 @@ Remove 5 routes and their imports:
 - `/logs` → Logs
 - `/system` → System
 
+### Content area padding
+
+The moved page components (Skills, Channels, BrowserProfiles) use internal list+detail layouts with `border-r` dividers. The existing `p-6` padding on the dialog content area would inset these layouts incorrectly. Solution: use `p-0` for tabs that render full-bleed page components, keep `p-6` only for GeneralPanel and AboutPanel.
+
+```tsx
+<div className={cn("flex-1 overflow-hidden",
+  ["general", "about"].includes(currentTab) ? "p-6 overflow-y-auto" : ""
+)}>
+```
+
+### Tab rendering
+
+Tabs **must** use conditional rendering (mount/unmount), not CSS visibility toggling, to ensure proper cleanup of intervals, SSE connections, and API polling in System and Channels components.
+
+### Route fallback
+
+Add a catch-all redirect in App.tsx to handle bookmarked/cached removed URLs:
+
+```tsx
+<Route path="*" element={<Navigate to="/" replace />} />
+```
+
 ### Files Changed
 
 | File | Change |
 |------|--------|
 | `web/src/components/layout/AppSidebar.tsx` | Remove 5 nav items, remove unused icon imports |
-| `web/src/components/settings/SettingsDialog.tsx` | Enlarge dialog, add 5 tabs, import page components |
-| `web/src/App.tsx` | Remove 5 routes and imports |
+| `web/src/components/settings/SettingsDialog.tsx` | Enlarge dialog, add 5 tabs, conditional padding, import page components |
+| `web/src/App.tsx` | Remove 5 routes/imports, add catch-all redirect |
+| `e2e/tests/navigation.spec.ts` | Update tests for removed sidebar nav items |
+| `e2e/tests/skills.spec.ts` | Navigate via Settings dialog instead of sidebar |
+| `e2e/tests/logs.spec.ts` | Navigate via Settings dialog instead of sidebar |
+| `e2e/tests/system.spec.ts` | Navigate via Settings dialog instead of sidebar |
+| `e2e/tests/channels/helpers.ts` | Update `navigateToChannels()` to use Settings dialog |
+| `e2e/tests/browser/helpers.ts` | Update `navigateToBrowser()` to use Settings dialog |
 
 ### No Changes Required
 
@@ -68,6 +96,8 @@ Remove 5 routes and their imports:
 
 ## Edge Cases
 
-- Page components use `flex h-full` layout which will fill the dialog content area naturally
-- System page's SSE connection lifecycle is managed by component mount/unmount — works correctly in dialog
-- Skills/Channels pages have their own internal list+detail layout — these render fine inside the enlarged dialog
+- Content area padding differs per tab type (p-6 for form tabs, p-0 for page component tabs)
+- Tab rendering uses conditional mount/unmount to manage SSE/polling lifecycle
+- System page's SSE EventSource uses hardcoded `/api/stream/system` — pre-existing issue in Tauri mode, not addressed here
+- Catch-all redirect prevents blank pages for bookmarked removed routes
+- `Settings` icon import remains in AppSidebar (used by bottom Settings button)
