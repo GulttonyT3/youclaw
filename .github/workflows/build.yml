@@ -142,6 +142,95 @@ jobs:
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
 
+  # ── Windows code signing (self-hosted runner with USB token) ──
+  sign-windows:
+    needs: build-windows
+    runs-on: self-hosted
+    name: Sign Windows exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download Windows exe from release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          mkdir -p unsigned
+          # 等待 release 创建完成
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" -R "$REPO" > /dev/null 2>&1; then
+              echo "Release found"
+              break
+            fi
+            echo "Waiting for release... ($i/30)"
+            sleep 10
+          done
+          gh release download "$TAG" -R "$REPO" --dir unsigned --pattern "*.exe" --pattern "*.nsis.zip" --pattern "*.nsis.zip.sig"
+
+      - name: Sign exe with USB token
+        shell: bash
+        run: |
+          EXE_PATH=$(ls unsigned/*.exe | head -1)
+          echo "Signing: $EXE_PATH"
+          sign.sh "$EXE_PATH"
+
+      - name: Re-package signed nsis.zip and regenerate signature
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          NSIS_ZIP="unsigned/You.Claw_${VERSION}_x64-setup.nsis.zip"
+          EXE_PATH=$(ls unsigned/*.exe | head -1)
+
+          # 替换 zip 中的 exe 为签名后的版本
+          if [ -f "$NSIS_ZIP" ]; then
+            cd unsigned
+            unzip -o "$(basename "$NSIS_ZIP")" -d nsis_tmp
+            cp "$(basename "$EXE_PATH")" nsis_tmp/
+            cd nsis_tmp
+            zip -r "../$(basename "$NSIS_ZIP")" .
+            cd ../..
+            rm -rf unsigned/nsis_tmp
+          fi
+
+      - name: Upload signed artifacts to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          for f in unsigned/*.exe unsigned/*.nsis.zip; do
+            [ ! -f "$f" ] && continue
+            echo "Uploading: $(basename "$f")"
+            gh release upload "$TAG" "$f" -R "$REPO" --clobber
+          done
+
+      - name: Notify Feishu
+        if: always()
+        uses: ./.github/actions/notify-feishu
+        with:
+          webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
+          title: "You Claw v${{ steps.version.outputs.VERSION }} · Windows Signing"
+          run-number: ${{ github.run_number }}
+          run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          status: ${{ job.status }}
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf unsigned
+
   # ── Linux build ── [temporarily disabled]
   # 启用时需要：1) 将 if 改为 true  2) 在 updater job 的 needs 中添加 build-linux
   #             3) 在 updater job 的 if 条件中添加 build-linux.result == 'success'
@@ -198,8 +287,8 @@ jobs:
 
   # ── Upload to OSS & generate updater manifest ──
   updater:
-    needs: [build-mac, build-windows]
-    if: always() && (needs.build-mac.result == 'success' && needs.build-windows.result == 'success')
+    needs: [build-mac, sign-windows]
+    if: always() && (needs.build-mac.result == 'success' && needs.sign-windows.result == 'success')
     runs-on: ubuntu-latest
     name: Upload to OSS & generate latest.json
 
