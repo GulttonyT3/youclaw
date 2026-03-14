@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "identifier": "com.youclaw.app",
   "build": {
-    "beforeDevCommand": "cd web && bun run dev & bun run ../src/index.ts & wait",
+    "beforeDevCommand": "cd web && bun run dev & bun run src/index.ts & wait",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "cd web && bun run build",
     "frontendDist": "../web/dist"

@@ -14,6 +14,9 @@ import { createChannelsRoutes } from './channels.ts'
 import { createRegistryRoutes } from './registry.ts'
 import { createWebhooksRoutes } from './webhooks.ts'
 import { createSettingsRoutes } from './settings.ts'
+import { createAuthRoutes } from './auth.ts'
+import { createCreditRoutes } from './credit.ts'
+import { createProxyRoutes } from './proxy.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter, ChannelManager } from '../channel/index.ts'
@@ -68,6 +71,9 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createLogsRoutes())
   app.route('/api', createWebhooksRoutes(channelManager))
   app.route('/api', createSettingsRoutes())
+  app.route('/api', createAuthRoutes())
+  app.route('/api', createCreditRoutes())
+  app.route('/api', createProxyRoutes())
 
   return app
 }

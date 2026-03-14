@@ -5,8 +5,9 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useI18n } from "@/i18n"
 import { cn } from "@/lib/utils"
-import { Plus, Pencil, Trash2, Check, Zap, Settings2 } from "lucide-react"
+import { Plus, Pencil, Trash2, Check, Zap, Settings2, Cloud } from "lucide-react"
 import { getSettings, updateSettings, type SettingsDTO, type CustomModelDTO } from "@/api/client"
+import { useAppStore } from "@/stores/app"
 
 // 内置模型定义
 const BUILTIN_MODELS = [
@@ -19,12 +20,13 @@ const BUILTIN_MODELS = [
 ] as const
 
 interface ActiveModel {
-  provider: "builtin" | "custom"
+  provider: "builtin" | "custom" | "cloud"
   id?: string
 }
 
 export function ModelsPanel() {
   const { t } = useI18n()
+  const { isLoggedIn, creditBalance, login } = useAppStore()
   const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: "builtin" })
@@ -58,10 +60,16 @@ export function ModelsPanel() {
   }, [])
 
   // 切换 active provider
-  const handleSetActiveProvider = async (provider: "builtin" | "custom") => {
+  const handleSetActiveProvider = async (provider: "builtin" | "custom" | "cloud") => {
     let newActive: ActiveModel
     if (provider === "builtin") {
       newActive = { provider: "builtin" }
+    } else if (provider === "cloud") {
+      if (!isLoggedIn) {
+        login()
+        return
+      }
+      newActive = { provider: "cloud" }
     } else {
       const defaultModel = customModels[0]
       if (!defaultModel) return
@@ -189,7 +197,7 @@ export function ModelsPanel() {
         <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
           {t.settings.activeModel}
         </h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {/* 内置模型卡片 */}
           <button
             onClick={() => handleSetActiveProvider("builtin")}
@@ -208,6 +216,35 @@ export function ModelsPanel() {
               <div className="text-xs text-muted-foreground mt-0.5">{t.settings.builtinDesc}</div>
             </div>
             {activeModel.provider === "builtin" && (
+              <span className="absolute top-3 right-3 flex items-center gap-1 text-xs font-medium text-primary">
+                <Check size={12} />
+                {t.settings.currentSelection}
+              </span>
+            )}
+          </button>
+
+          {/* YouClaw Cloud 卡片 */}
+          <button
+            onClick={() => handleSetActiveProvider("cloud")}
+            className={cn(
+              "relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all",
+              activeModel.provider === "cloud"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-muted-foreground/30"
+            )}
+          >
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+              <Cloud size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{t.settings.cloudProvider}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {isLoggedIn
+                  ? `${t.settings.cloudDesc}${creditBalance !== null ? ` · ${creditBalance}` : ''}`
+                  : t.settings.cloudNeedLogin}
+              </div>
+            </div>
+            {activeModel.provider === "cloud" && (
               <span className="absolute top-3 right-3 flex items-center gap-1 text-xs font-medium text-primary">
                 <Check size={12} />
                 {t.settings.currentSelection}

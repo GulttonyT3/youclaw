@@ -11,7 +11,7 @@ export const CustomModelSchema = z.object({
 
 export const SettingsSchema = z.object({
   activeModel: z.object({
-    provider: z.enum(['builtin', 'custom']),
+    provider: z.enum(['builtin', 'custom', 'cloud']),
     id: z.string().optional(),
   }).default({ provider: 'builtin' }),
   customModels: z.array(CustomModelSchema).default([]),

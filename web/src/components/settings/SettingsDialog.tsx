@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog"
 import { GeneralPanel } from "./GeneralPanel"
 import { ModelsPanel } from "./ModelsPanel"
+import { AccountPanel } from "./AccountPanel"
 import { AboutPanel } from "./AboutPanel"
 import { Skills } from "@/pages/Skills"
 import { Channels } from "@/pages/Channels"
@@ -12,7 +13,7 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n"
 
-type Tab = "general" | "models" | "skills" | "channels" | "browser" | "logs" | "system" | "about"
+type Tab = "account" | "general" | "models" | "skills" | "channels" | "browser" | "logs" | "system" | "about"
 
 interface SettingsDialogProps {
   open: boolean
@@ -21,9 +22,10 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { t } = useI18n()
-  const [currentTab, setCurrentTab] = useState<Tab>("general")
+  const [currentTab, setCurrentTab] = useState<Tab>("account")
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: "account", label: t.account.title },
     { id: "general", label: t.settings.general },
     { id: "models", label: t.settings.models },
     { id: "skills", label: t.nav.skills },
@@ -63,10 +65,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         {/* 内容区 */}
         <div className={cn(
           "flex-1 overflow-hidden",
-          currentTab === "general" || currentTab === "models" || currentTab === "about"
+          currentTab === "account" || currentTab === "general" || currentTab === "models" || currentTab === "about"
             ? "p-6 overflow-y-auto"
             : ""
         )}>
+          {currentTab === "account" && <AccountPanel />}
           {currentTab === "general" && <GeneralPanel />}
           {currentTab === "models" && <ModelsPanel />}
           {currentTab === "skills" && <Skills />}

@@ -205,20 +205,7 @@ async fn restart_sidecar(app: AppHandle) -> Result<(), String> {
     wait_for_health(port, 30).await
 }
 
-/// Get port from store or use default
-#[cfg(debug_assertions)]
-fn get_port(app: &AppHandle) -> u16 {
-    if let Ok(store) = app.store("settings.json") {
-        if let Some(port_val) = store.get("port") {
-            if let Some(p) = port_val.as_str() {
-                if let Ok(port) = p.parse::<u16>() {
-                    return port;
-                }
-            }
-        }
-    }
-    3000
-}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -298,8 +285,23 @@ pub fn run() {
                 }
                 #[cfg(debug_assertions)]
                 {
-                    log::info!("Dev mode: skipping sidecar, using bun dev server");
-                    port = get_port(&app_handle);
+                    // Dev 模式：读 .env 中的 PORT，同步写入 store 供前端使用
+                    port = std::fs::read_to_string(
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
+                    )
+                    .ok()
+                    .and_then(|content| {
+                        content.lines()
+                            .find(|l| l.starts_with("PORT="))
+                            .and_then(|l| l.strip_prefix("PORT="))
+                            .and_then(|v| v.trim().parse::<u16>().ok())
+                    })
+                    .unwrap_or(3000);
+
+                    if let Ok(store) = app_handle.store("settings.json") {
+                        let _ = store.set("port", serde_json::Value::String(port.to_string()));
+                    }
+                    log::info!("Dev mode: skipping sidecar, using bun dev server on port {}", port);
                 }
 
                 match wait_for_health(port, 60).await {

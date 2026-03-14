@@ -10,6 +10,8 @@ import {
   SquarePen,
   MoreHorizontal,
   Trash2,
+  LogIn,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
@@ -33,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useAppStore } from "@/stores/app";
 
 /** 行内左右 padding，保证收起时图标在 52px 内居中 (8+36+8=52) */
 const ROW_PX = "px-2";
@@ -47,6 +50,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const chatCtx = useChatContext();
+  const { user, isLoggedIn, authLoading, creditBalance, login } = useAppStore();
   const isChatRoute = location.pathname === "/";
   const [platform, setPlatform] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -284,41 +288,104 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
 
         {/* 底部 */}
         <div
-          className="border-t border-border py-2 flex items-center"
+          className="border-t border-border py-2 space-y-0.5"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className={cn(
-              "flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden",
-              ROW_PX,
-              "text-muted-foreground hover:text-foreground hover:bg-accent",
-            )}
-            aria-label={t.settings.title}
-          >
-            <div className="w-9 h-9 shrink-0 flex items-center justify-center">
-              <Settings className="h-4 w-4" />
-            </div>
-            <span
-              className={cn(
-                "text-sm transition-opacity duration-200",
-                isCollapsed ? "opacity-0" : "opacity-100",
-              )}
-            >
-              {t.settings.title}
-            </span>
-          </button>
-          {!isCollapsed && <div className="flex-1 min-w-0" />}
-          {!isCollapsed && (
+          {/* 用户信息 / 登录按钮 */}
+          {isLoggedIn && user ? (
             <button
               type="button"
-              onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-              className="shrink-0 px-2 py-0.5 rounded border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              onClick={onOpenSettings}
+              className={cn(
+                "flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden",
+                ROW_PX,
+                "text-muted-foreground hover:text-foreground hover:bg-accent",
+              )}
             >
-              {locale === "en" ? "中" : "EN"}
+              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                {user.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="w-5 h-5 rounded-full" />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[10px] font-bold">
+                    {user.name?.[0]?.toUpperCase() ?? '?'}
+                  </div>
+                )}
+              </div>
+              <span
+                className={cn(
+                  "text-sm truncate transition-opacity duration-200 flex-1 text-left",
+                  isCollapsed ? "opacity-0" : "opacity-100",
+                )}
+              >
+                {user.name}
+              </span>
+              {!isCollapsed && creditBalance !== null && (
+                <span className="text-xs text-muted-foreground flex items-center gap-0.5 shrink-0 mr-1">
+                  <Coins className="h-3 w-3" />
+                  {creditBalance}
+                </span>
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => login()}
+              disabled={authLoading}
+              className={cn(
+                "flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden",
+                ROW_PX,
+                "text-muted-foreground hover:text-foreground hover:bg-accent",
+              )}
+            >
+              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                <LogIn className="h-4 w-4" />
+              </div>
+              <span
+                className={cn(
+                  "text-sm transition-opacity duration-200",
+                  isCollapsed ? "opacity-0" : "opacity-100",
+                )}
+              >
+                {authLoading ? t.account.loggingIn : t.account.login}
+              </span>
             </button>
           )}
+
+          {/* 设置 */}
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className={cn(
+                "flex items-center h-9 w-full rounded-lg transition-colors whitespace-nowrap overflow-hidden",
+                ROW_PX,
+                "text-muted-foreground hover:text-foreground hover:bg-accent",
+              )}
+              aria-label={t.settings.title}
+            >
+              <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                <Settings className="h-4 w-4" />
+              </div>
+              <span
+                className={cn(
+                  "text-sm transition-opacity duration-200",
+                  isCollapsed ? "opacity-0" : "opacity-100",
+                )}
+              >
+                {t.settings.title}
+              </span>
+            </button>
+            {!isCollapsed && <div className="flex-1 min-w-0" />}
+            {!isCollapsed && (
+              <button
+                type="button"
+                onClick={() => setLocale(locale === "en" ? "zh" : "en")}
+                className="shrink-0 px-2 py-0.5 rounded border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                {locale === "en" ? "中" : "EN"}
+              </button>
+            )}
+          </div>
         </div>
       </aside>
 

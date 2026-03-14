@@ -1,4 +1,5 @@
 import { getDatabase } from '../db/index.ts'
+import { getEnv } from '../config/index.ts'
 import { SettingsSchema, type Settings, type CustomModel } from './schema.ts'
 
 // kv_state 中的 key
@@ -48,6 +49,18 @@ export function updateSettings(partial: Partial<Settings>): Settings {
  */
 export function getActiveModelConfig(): { apiKey: string; baseUrl: string; modelId: string; provider: string } | null {
   const settings = getSettings()
+
+  if (settings.activeModel.provider === 'cloud') {
+    // cloud 模式：SDK 调本地代理，代理转发时附加 rdxtoken
+    const env = getEnv()
+    const port = env.PORT
+    return {
+      apiKey: 'youclaw',
+      baseUrl: `http://localhost:${port}/api/proxy`,
+      modelId: 'claude-sonnet-4-6',
+      provider: 'cloud',
+    }
+  }
 
   if (settings.activeModel.provider === 'custom' && settings.activeModel.id) {
     const model = settings.customModels.find((m: CustomModel) => m.id === settings.activeModel.id)
