@@ -26,8 +26,9 @@ export function createCreditRoutes() {
         return c.json({ error: 'Failed to fetch balance' }, 500)
       }
 
-      const data = await res.json()
-      return c.json(data)
+      const data = await res.json() as { success?: boolean; data?: { balance?: number } }
+      const balance = data.data?.balance ?? 0
+      return c.json({ balance })
     } catch (err) {
       const logger = getLogger()
       logger.error({ error: String(err), category: 'credit' }, 'Failed to fetch credit balance')
@@ -58,8 +59,8 @@ export function createCreditRoutes() {
         return c.json({ error: 'Failed to fetch transactions' }, 500)
       }
 
-      const data = await res.json()
-      return c.json(data)
+      const data = await res.json() as { success?: boolean; data?: unknown }
+      return c.json(data.data ?? { items: [], total: 0 })
     } catch (err) {
       const logger = getLogger()
       logger.error({ error: String(err), category: 'credit' }, 'Failed to fetch credit transactions')
