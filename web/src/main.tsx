@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { I18nProvider } from './i18n'
 import { initBaseUrl } from './api/transport'
+import { useAppStore } from './stores/app'
 import './index.css'
 import 'streamdown/styles.css'
 
@@ -12,12 +13,14 @@ if (navigator.platform && !navigator.platform.startsWith('Mac')) {
 }
 
 // 预加载后端端口配置（Tauri 模式从 store 读取），等待完成后再渲染
-initBaseUrl().then(() => {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <I18nProvider>
-        <App />
-      </I18nProvider>
-    </StrictMode>,
-  )
-})
+initBaseUrl()
+  .then(() => useAppStore.getState().hydrate())
+  .then(() => {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <I18nProvider>
+          <App />
+        </I18nProvider>
+      </StrictMode>,
+    )
+  })

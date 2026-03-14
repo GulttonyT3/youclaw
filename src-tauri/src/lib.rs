@@ -39,84 +39,12 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let port = find_available_port()?;
     log::info!("Allocated random port {} for sidecar", port);
 
-    // Read settings from Tauri Store and inject as env vars
+    // Model config (API Key, Base URL, Model ID) is now managed by the backend
+    // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
     let mut env_vars: Vec<(String, String)> = vec![];
     env_vars.push(("PORT".into(), port.to_string()));
 
     if let Ok(store) = app.store("settings.json") {
-        // Read active-model config to determine model source
-        let mut model_configured = false;
-
-        if let Some(active_model) = store.get("active-model") {
-            let provider = active_model.get("provider").and_then(|v| v.as_str()).unwrap_or("");
-
-            match provider {
-                "builtin" => {
-                    // Builtin model: read builtin-model and map to actual model ID
-                    if let Some(builtin) = store.get("builtin-model") {
-                        if let Some(builtin_id) = builtin.as_str() {
-                            let actual_model = match builtin_id {
-                                "youclaw-pro" => "claude-sonnet-4-6",
-                                other => other,
-                            };
-                            env_vars.push(("AGENT_MODEL".into(), actual_model.to_string()));
-                            // TODO: replace with YouClaw official API endpoint
-                            model_configured = true;
-                        }
-                    }
-                }
-                "custom" => {
-                    // Custom model: find matching record from custom-models
-                    if let Some(custom_id) = active_model.get("id").and_then(|v| v.as_str()) {
-                        if let Some(custom_models) = store.get("custom-models") {
-                            if let Some(models) = custom_models.as_array() {
-                                for model in models {
-                                    if model.get("id").and_then(|v| v.as_str()) == Some(custom_id) {
-                                        if let Some(model_id) = model.get("modelId").and_then(|v| v.as_str()) {
-                                            if !model_id.is_empty() {
-                                                env_vars.push(("AGENT_MODEL".into(), model_id.to_string()));
-                                            }
-                                        }
-                                        if let Some(api_key) = model.get("apiKey").and_then(|v| v.as_str()) {
-                                            if !api_key.is_empty() {
-                                                env_vars.push(("ANTHROPIC_API_KEY".into(), api_key.to_string()));
-                                            }
-                                        }
-                                        if let Some(base_url) = model.get("baseUrl").and_then(|v| v.as_str()) {
-                                            if !base_url.is_empty() {
-                                                env_vars.push(("ANTHROPIC_BASE_URL".into(), base_url.to_string()));
-                                            }
-                                        }
-                                        model_configured = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Fallback to legacy api-key / base-url if active-model is not configured
-        if !model_configured {
-            if let Some(api_key) = store.get("api-key") {
-                if let Some(key) = api_key.as_str() {
-                    if !key.is_empty() {
-                        env_vars.push(("ANTHROPIC_API_KEY".into(), key.to_string()));
-                    }
-                }
-            }
-            if let Some(base_url) = store.get("base-url") {
-                if let Some(url) = base_url.as_str() {
-                    if !url.is_empty() {
-                        env_vars.push(("ANTHROPIC_BASE_URL".into(), url.to_string()));
-                    }
-                }
-            }
-        }
-
         // Write port to store for frontend to read
         let _ = store.set("port", serde_json::Value::String(port.to_string()));
         let _ = store.save();

@@ -10,6 +10,7 @@ import type { PromptBuilder } from './prompt-builder.ts'
 import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import { resolveMcpServers } from './mcp-utils.ts'
+import { getActiveModelConfig } from '../settings/manager.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 
 // 解析 claude-agent-sdk cli.js 路径
@@ -106,12 +107,24 @@ export class AgentRuntime {
         }
       }
 
+      // 优先从 Settings API 读取模型配置，fallback 到环境变量
+      const modelConfig = getActiveModelConfig()
+      let model = env.AGENT_MODEL
+      if (modelConfig) {
+        model = modelConfig.modelId
+        // 设置环境变量让 SDK 生效
+        process.env.ANTHROPIC_API_KEY = modelConfig.apiKey
+        if (modelConfig.baseUrl) {
+          process.env.ANTHROPIC_BASE_URL = modelConfig.baseUrl
+        }
+      }
+
       const { fullText, sessionId } = await this.executeQuery(
         finalPrompt,
         agentId,
         chatId,
         existingSessionId,
-        env.AGENT_MODEL,
+        model,
         params.requestedSkills,
         params.browserProfileId,
         params.attachments,

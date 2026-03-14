@@ -356,6 +356,36 @@ export async function getScheduledTaskLogs(id: string) {
   return apiFetch<TaskRunLogDTO[]>(`/api/tasks/${id}/logs`)
 }
 
+// ===== Settings API =====
+
+export interface CustomModelDTO {
+  id: string
+  name: string
+  provider: 'anthropic' | 'openai' | 'gemini' | 'custom'
+  apiKey: string
+  baseUrl: string
+  modelId: string
+}
+
+export interface SettingsDTO {
+  activeModel: {
+    provider: 'builtin' | 'custom'
+    id?: string
+  }
+  customModels: CustomModelDTO[]
+}
+
+export async function getSettings() {
+  return apiFetch<SettingsDTO>('/api/settings')
+}
+
+export async function updateSettings(data: Partial<SettingsDTO>) {
+  return apiFetch<SettingsDTO>('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
 // ===== 系统日志 API =====
 
 export interface LogEntry {

@@ -1,6 +1,6 @@
 import { Sparkles } from 'lucide-react'
 import { useI18n } from '@/i18n'
-import { useChatContext } from '@/hooks/useChatContext'
+import { useChatContext } from '@/hooks/chatCtx'
 import { ChatWelcome } from '@/components/chat/ChatWelcome'
 import { ChatMessages } from '@/components/chat/ChatMessages'
 import { ChatInput } from '@/components/chat/ChatInput'

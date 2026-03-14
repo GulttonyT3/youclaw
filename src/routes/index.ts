@@ -13,6 +13,7 @@ import { createLogsRoutes } from './logs.ts'
 import { createChannelsRoutes } from './channels.ts'
 import { createRegistryRoutes } from './registry.ts'
 import { createWebhooksRoutes } from './webhooks.ts'
+import { createSettingsRoutes } from './settings.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter, ChannelManager } from '../channel/index.ts'
@@ -48,7 +49,7 @@ export function createApp(deps: AppDeps) {
       'http://tauri.localhost',   // Windows Tauri WebView
       'https://tauri.localhost',  // Linux Tauri WebView
     ],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowHeaders: ['Content-Type'],
   }))
 
@@ -66,6 +67,7 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createRegistryRoutes(registryManager))
   app.route('/api', createLogsRoutes())
   app.route('/api', createWebhooksRoutes(channelManager))
+  app.route('/api', createSettingsRoutes())
 
   return app
 }

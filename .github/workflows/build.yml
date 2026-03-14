@@ -53,6 +53,7 @@ jobs:
           rust-targets: ${{ matrix.rust_targets || '' }}
           oss-bucket: ${{ secrets.OSS_BUCKET }}
           oss-endpoint: ${{ secrets.OSS_ENDPOINT }}
+          cdn-base-url: ${{ secrets.CDN_BASE_URL }}
 
       - name: Build sidecar
         run: |
@@ -111,6 +112,7 @@ jobs:
           sidecar-suffix: x86_64-pc-windows-msvc
           oss-bucket: ${{ secrets.OSS_BUCKET }}
           oss-endpoint: ${{ secrets.OSS_ENDPOINT }}
+          cdn-base-url: ${{ secrets.CDN_BASE_URL }}
 
       - name: Build sidecar
         shell: bash
@@ -250,6 +252,7 @@ jobs:
           sidecar-suffix: x86_64-unknown-linux-gnu
           oss-bucket: ${{ secrets.OSS_BUCKET }}
           oss-endpoint: ${{ secrets.OSS_ENDPOINT }}
+          cdn-base-url: ${{ secrets.CDN_BASE_URL }}
 
       - name: Install Linux dependencies
         run: |
@@ -320,12 +323,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          CDN_BASE_URL: ${{ secrets.CDN_BASE_URL }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          OSS_BASE="oss://${OSS_BUCKET}/releases/${TAG}"
-          CDN_BASE="https://${OSS_BUCKET}.${OSS_ENDPOINT}/releases/${TAG}"
+          OSS_BASE="oss://${OSS_BUCKET}/youclaw/releases/${TAG}"
+          CDN_BASE="${CDN_BASE_URL}/releases/${TAG}"
 
           mkdir -p assets
           gh release download "$TAG" -R "$REPO" --dir assets
@@ -343,7 +347,7 @@ jobs:
             ossutil cp "$f" "${OSS_BASE}/${NAME}" -f
             # Strip version from filename for stable download link
             LATEST_NAME=$(echo "$NAME" | sed "s/_${VERSION}//")
-            ossutil cp "$f" "oss://${OSS_BUCKET}/releases/latest/${LATEST_NAME}" -f
+            ossutil cp "$f" "oss://${OSS_BUCKET}/youclaw/releases/latest/${LATEST_NAME}" -f
           done
 
           SIG_COUNT=$(ls assets/*.sig 2>/dev/null | wc -l)
@@ -407,7 +411,7 @@ jobs:
           cat latest.json
 
           # Upload latest.json to fixed path for updater
-          ossutil cp latest.json "oss://${OSS_BUCKET}/releases/latest.json" -f
+          ossutil cp latest.json "oss://${OSS_BUCKET}/youclaw/releases/latest.json" -f
 
       - name: Notify Feishu
         if: always()

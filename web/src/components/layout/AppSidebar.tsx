@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useSidebar } from "@/hooks/useSidebar";
-import { useChatContext } from "@/hooks/useChatContext";
+import { useChatContext } from "@/hooks/chatCtx";
 import { groupChatsByDate } from "@/lib/chat-utils";
 import { isTauri } from "@/api/transport";
 import {

@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { isTauri } from "@/api/transport"
 import { useI18n } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { Plus, Pencil, Trash2, Check, Zap, Settings2 } from "lucide-react"
+import { getSettings, updateSettings, type SettingsDTO, type CustomModelDTO } from "@/api/client"
 
 // 内置模型定义
 const BUILTIN_MODELS = [
@@ -18,56 +18,43 @@ const BUILTIN_MODELS = [
   },
 ] as const
 
-interface CustomModel {
-  id: string
-  name: string
-  apiKey: string
-  baseUrl: string
-  modelId: string
-}
-
 interface ActiveModel {
   provider: "builtin" | "custom"
   id?: string
 }
 
-async function loadTauriStore() {
-  const { load } = await import("@tauri-apps/plugin-store")
-  return load("settings.json")
-}
-
 export function ModelsPanel() {
   const { t } = useI18n()
   const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
-  const [customModels, setCustomModels] = useState<CustomModel[]>([])
+  const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: "builtin" })
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingModel, setEditingModel] = useState<CustomModel | null>(null)
+  const [editingModel, setEditingModel] = useState<CustomModelDTO | null>(null)
   // 表单字段
   const [formName, setFormName] = useState("")
   const [formModelId, setFormModelId] = useState("")
   const [formApiKey, setFormApiKey] = useState("")
   const [formBaseUrl, setFormBaseUrl] = useState("")
+  // 表单校验错误（字段被 touch 后才展示）
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
 
-  // 从 store 加载
+  // 从后端 API 加载
   useEffect(() => {
-    if (!isTauri) return
-    loadTauriStore().then(async (store) => {
-      const bm = await store.get<string>("builtin-model")
-      if (bm) setBuiltinModel(bm)
-      const cm = await store.get<CustomModel[]>("custom-models")
-      if (cm) setCustomModels(cm)
-      const am = await store.get<ActiveModel>("active-model")
-      if (am) setActiveModel(am)
-    })
+    getSettings().then((settings) => {
+      setActiveModel(settings.activeModel)
+      setCustomModels(settings.customModels)
+    }).catch(console.error)
   }, [])
 
-  // 保存到 store
-  const saveToStore = useCallback(async (key: string, value: unknown) => {
-    if (!isTauri) return
-    const store = await loadTauriStore()
-    await store.set(key, value)
-    await store.save()
+  // 保存到后端
+  const saveSettings = useCallback(async (partial: Partial<SettingsDTO>) => {
+    try {
+      const updated = await updateSettings(partial)
+      setActiveModel(updated.activeModel)
+      setCustomModels(updated.customModels)
+    } catch (err) {
+      console.error('Failed to save settings:', err)
+    }
   }, [])
 
   // 切换 active provider
@@ -76,27 +63,46 @@ export function ModelsPanel() {
     if (provider === "builtin") {
       newActive = { provider: "builtin" }
     } else {
-      // 找默认的自定义模型或第一个
       const defaultModel = customModels[0]
       if (!defaultModel) return
       newActive = { provider: "custom", id: defaultModel.id }
     }
     setActiveModel(newActive)
-    await saveToStore("active-model", newActive)
+    await saveSettings({ activeModel: newActive })
   }
 
   // 选择内置模型
   const handleSelectBuiltin = async (id: string) => {
     setBuiltinModel(id)
-    await saveToStore("builtin-model", id)
   }
 
   // 设置自定义模型为激活
   const handleSetCustomActive = async (id: string) => {
     const newActive: ActiveModel = { provider: "custom", id }
     setActiveModel(newActive)
-    await saveToStore("active-model", newActive)
+    await saveSettings({ activeModel: newActive })
   }
+
+  // 表单校验
+  const formErrors = {
+    name: !formName.trim() ? t.settings.validationRequired ?? 'Required' : null,
+    modelId: !formModelId.trim()
+      ? t.settings.validationRequired ?? 'Required'
+      : /\s/.test(formModelId.trim())
+        ? t.settings.validationModelIdNoSpaces ?? 'Model ID cannot contain spaces'
+        : null,
+    apiKey: !editingModel && !formApiKey.trim()
+      ? t.settings.validationRequired ?? 'Required'
+      : formApiKey.trim() && formApiKey.trim().length < 8
+        ? t.settings.validationApiKeyTooShort ?? 'API Key is too short'
+        : null,
+    baseUrl: formBaseUrl.trim() && !/^https?:\/\/.+/.test(formBaseUrl.trim())
+      ? t.settings.validationBaseUrlFormat ?? 'Must start with http:// or https://'
+      : null,
+  }
+  const hasErrors = Object.values(formErrors).some((e) => e !== null)
+
+  const handleBlur = (field: string) => setTouched((prev) => ({ ...prev, [field]: true }))
 
   // 打开添加 dialog
   const handleOpenAdd = () => {
@@ -105,34 +111,47 @@ export function ModelsPanel() {
     setFormModelId("")
     setFormApiKey("")
     setFormBaseUrl("")
+    setTouched({})
     setDialogOpen(true)
   }
 
   // 打开编辑 dialog
-  const handleOpenEdit = (model: CustomModel) => {
+  const handleOpenEdit = (model: CustomModelDTO) => {
     setEditingModel(model)
     setFormName(model.name)
     setFormModelId(model.modelId)
-    setFormApiKey(model.apiKey)
+    setFormApiKey("")
     setFormBaseUrl(model.baseUrl)
+    setTouched({})
     setDialogOpen(true)
   }
 
   // 保存自定义模型（新建或编辑）
   const handleSaveModel = async () => {
-    if (!formName.trim() || !formModelId.trim() || !formApiKey.trim()) return
+    // 标记所有字段为已触碰，显示全部错误
+    setTouched({ name: true, modelId: true, apiKey: true, baseUrl: true })
+    if (hasErrors) return
 
-    let updated: CustomModel[]
+    let updated: CustomModelDTO[]
     if (editingModel) {
       updated = customModels.map((m) =>
         m.id === editingModel.id
-          ? { ...m, name: formName, modelId: formModelId, apiKey: formApiKey, baseUrl: formBaseUrl }
+          ? {
+              ...m,
+              name: formName,
+              modelId: formModelId,
+              baseUrl: formBaseUrl,
+              provider: 'anthropic' as const,
+              // 如果用户输入了新的 apiKey 就用新的，否则保留原值（脱敏值会被后端忽略）
+              ...(formApiKey.trim() ? { apiKey: formApiKey } : {}),
+            }
           : m
       )
     } else {
-      const newModel: CustomModel = {
+      const newModel: CustomModelDTO = {
         id: crypto.randomUUID(),
         name: formName,
+        provider: 'anthropic',
         modelId: formModelId,
         apiKey: formApiKey,
         baseUrl: formBaseUrl,
@@ -140,7 +159,7 @@ export function ModelsPanel() {
       updated = [...customModels, newModel]
     }
     setCustomModels(updated)
-    await saveToStore("custom-models", updated)
+    await saveSettings({ customModels: updated })
     setDialogOpen(false)
   }
 
@@ -149,13 +168,15 @@ export function ModelsPanel() {
     if (!confirm(t.settings.confirmDeleteModel)) return
     const updated = customModels.filter((m) => m.id !== id)
     setCustomModels(updated)
-    await saveToStore("custom-models", updated)
+
+    const partial: Partial<SettingsDTO> = { customModels: updated }
     // 如果删的是当前激活的，切回内置
     if (activeModel.provider === "custom" && activeModel.id === id) {
       const newActive: ActiveModel = { provider: "builtin" }
       setActiveModel(newActive)
-      await saveToStore("active-model", newActive)
+      partial.activeModel = newActive
     }
+    await saveSettings(partial)
   }
 
   // 判断当前模型是否激活
@@ -333,47 +354,64 @@ export function ModelsPanel() {
             {editingModel ? t.settings.editModel : t.settings.addCustomModel}
           </h2>
           <div className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label>{t.settings.modelName}</Label>
               <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
+                onBlur={() => handleBlur('name')}
                 placeholder={t.settings.modelNamePlaceholder}
+                className={touched.name && formErrors.name ? 'border-destructive' : ''}
               />
+              {touched.name && formErrors.name && (
+                <p className="text-xs text-destructive">{formErrors.name}</p>
+              )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label>{t.settings.modelId}</Label>
               <Input
                 value={formModelId}
                 onChange={(e) => setFormModelId(e.target.value)}
+                onBlur={() => handleBlur('modelId')}
                 placeholder={t.settings.modelIdPlaceholder}
+                className={touched.modelId && formErrors.modelId ? 'border-destructive' : ''}
               />
+              {touched.modelId && formErrors.modelId && (
+                <p className="text-xs text-destructive">{formErrors.modelId}</p>
+              )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label>API Key</Label>
               <Input
                 type="password"
                 value={formApiKey}
                 onChange={(e) => setFormApiKey(e.target.value)}
-                placeholder={t.settings.apiKeyPlaceholder}
+                onBlur={() => handleBlur('apiKey')}
+                placeholder={editingModel ? t.settings.apiKeyEditPlaceholder ?? "Leave empty to keep current key" : t.settings.apiKeyPlaceholder}
+                className={touched.apiKey && formErrors.apiKey ? 'border-destructive' : ''}
               />
+              {touched.apiKey && formErrors.apiKey && (
+                <p className="text-xs text-destructive">{formErrors.apiKey}</p>
+              )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label>Base URL</Label>
               <Input
                 value={formBaseUrl}
                 onChange={(e) => setFormBaseUrl(e.target.value)}
+                onBlur={() => handleBlur('baseUrl')}
                 placeholder={t.settings.baseUrlPlaceholder}
+                className={touched.baseUrl && formErrors.baseUrl ? 'border-destructive' : ''}
               />
+              {touched.baseUrl && formErrors.baseUrl && (
+                <p className="text-xs text-destructive">{formErrors.baseUrl}</p>
+              )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button
-                onClick={handleSaveModel}
-                disabled={!formName.trim() || !formModelId.trim() || !formApiKey.trim()}
-              >
+              <Button onClick={handleSaveModel} disabled={hasErrors}>
                 {t.common.save}
               </Button>
             </div>

@@ -1,5 +1,5 @@
 import { useI18n } from "@/i18n";
-import { useChatContext } from "@/hooks/useChatContext";
+import { useChatContext } from "@/hooks/chatCtx";
 import {
   PromptInput,
   PromptInputTextarea,
