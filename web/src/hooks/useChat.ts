@@ -17,6 +17,7 @@ export type Message = {
   timestamp: string
   toolUse?: ToolUseItem[]
   attachments?: Attachment[]
+  errorCode?: string
 }
 
 export function useChat(agentId: string) {
@@ -33,6 +34,8 @@ export function useChat(agentId: string) {
 
   // Track last SSE event time for timeout fallback
   const lastEventTimeRef = useRef<number>(0)
+  // 标记 SSE 已经处理过错误，防止 send() catch 重复添加消息
+  const sseErrorHandledRef = useRef(false)
 
   const { close: closeSSE } = useSSE(chatId, (event) => {
     lastEventTimeRef.current = Date.now()
@@ -68,16 +71,20 @@ export function useChat(agentId: string) {
         setIsProcessing(event.isProcessing ?? false)
         break
       case 'error':
-        console.log('[useChat] error event received:', { errorCode: event.errorCode, error: event.error })
+        sseErrorHandledRef.current = true
         setChatStatus('error')
         setTimeout(() => setChatStatus('ready'), 2000)
-        // Show insufficient credits dialog when balance is low
         if (event.errorCode === 'INSUFFICIENT_CREDITS') {
-          console.log('[useChat] INSUFFICIENT_CREDITS detected, showing dialog')
           setShowInsufficientCredits(true)
-        }
-        // Show error to user instead of silently swallowing it
-        if (event.error) {
+          // 积分不足：用 errorCode 标记，由 AssistantMessage 渲染国际化内容
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            errorCode: 'INSUFFICIENT_CREDITS',
+          }])
+        } else if (event.error) {
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'assistant',
@@ -150,6 +157,7 @@ export function useChat(agentId: string) {
     }])
     setIsProcessing(true)
     setStreamingText('')
+    sseErrorHandledRef.current = false
 
     // Wait for React render + EventSource connection before sending
     if (!chatId) {
@@ -159,17 +167,30 @@ export function useChat(agentId: string) {
     try {
       await sendMessage(agentId, prompt, effectiveChatId, browserProfileId, attachments)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      // Check for insufficient credits keywords as fallback
-      if (/insufficient|credit|balance|quota/i.test(errorMsg)) {
-        setShowInsufficientCredits(true)
+      // SSE 已经处理过错误，跳过避免重复消息
+      if (sseErrorHandledRef.current) {
+        sseErrorHandledRef.current = false
+        return
       }
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `⚠️ ${errorMsg}`,
-        timestamp: new Date().toISOString(),
-      }])
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      const isCredits = /insufficient|credit|balance|quota/i.test(errorMsg)
+      if (isCredits) {
+        setShowInsufficientCredits(true)
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+          errorCode: 'INSUFFICIENT_CREDITS',
+        }])
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `⚠️ ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+        }])
+      }
       setIsProcessing(false)
     }
   }, [agentId, chatId])
