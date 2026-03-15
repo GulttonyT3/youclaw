@@ -246,7 +246,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
 
               {/* 文档 */}
               <DropdownMenuItem asChild className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
-                <a href="https://youclaw.com" target="_blank" rel="noopener noreferrer">
+                <a href="https://youclaw.dev" target="_blank" rel="noopener noreferrer">
                   <BookOpen className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">{t.settings.about}</span>
                 </a>

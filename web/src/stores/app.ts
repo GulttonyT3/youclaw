@@ -103,8 +103,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { loginUrl } = await getAuthLoginUrl()
       // 用浏览器打开登录页
       if (isTauri) {
-        const { open } = await import('@tauri-apps/plugin-opener')
-        await open(loginUrl)
+        const { openUrl } = await import('@tauri-apps/plugin-opener')
+        await openUrl(loginUrl)
       } else {
         window.open(loginUrl, '_blank')
       }
@@ -165,8 +165,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { payUrl } = await getPayUrl()
       if (isTauri) {
-        const { open } = await import('@tauri-apps/plugin-opener')
-        await open(payUrl)
+        const { openUrl } = await import('@tauri-apps/plugin-opener')
+        await openUrl(payUrl)
       } else {
         window.open(payUrl, '_blank')
       }

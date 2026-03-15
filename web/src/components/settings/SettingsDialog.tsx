@@ -7,14 +7,12 @@ import { AboutPanel } from "./AboutPanel"
 import { Skills } from "@/pages/Skills"
 import { Channels } from "@/pages/Channels"
 import { BrowserProfiles } from "@/pages/BrowserProfiles"
-import { Logs } from "@/pages/Logs"
-import { System } from "@/pages/System"
-import { X, User, Palette, Cpu, Wrench, Radio, Globe, ScrollText, Monitor, Info } from "lucide-react"
+import { X, User, Palette, Cpu, Wrench, Radio, Globe, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n"
 import { useAppStore } from "@/stores/app"
 
-type Tab = "account" | "general" | "models" | "skills" | "channels" | "browser" | "logs" | "system" | "about"
+type Tab = "account" | "general" | "models" | "skills" | "channels" | "browser" | "about"
 
 interface SettingsDialogProps {
   open: boolean
@@ -33,8 +31,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     { id: "skills", label: t.nav.skills, icon: Wrench },
     { id: "channels", label: t.nav.channels, icon: Radio },
     { id: "browser", label: t.nav.browser, icon: Globe },
-    { id: "logs", label: t.nav.logs, icon: ScrollText },
-    { id: "system", label: t.nav.system, icon: Monitor },
     { id: "about", label: t.settings.about, icon: Info },
   ]
 
@@ -84,8 +80,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           {currentTab === "skills" && <Skills />}
           {currentTab === "channels" && <Channels />}
           {currentTab === "browser" && <BrowserProfiles />}
-          {currentTab === "logs" && <Logs />}
-          {currentTab === "system" && <System />}
           {currentTab === "about" && <AboutPanel />}
         </div>
       </DialogContent>

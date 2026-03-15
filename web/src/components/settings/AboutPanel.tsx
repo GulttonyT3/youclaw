@@ -159,7 +159,7 @@ export function AboutPanel() {
           </a>
         </Button>
         <Button variant="outline" size="sm" className="gap-2 rounded-xl" asChild>
-          <a href="https://youclaw.com" target="_blank" rel="noopener noreferrer">
+          <a href="https://youclaw.dev" target="_blank" rel="noopener noreferrer">
             <Globe size={14} />
             Website
           </a>
