@@ -32,13 +32,28 @@ function getCurrentTarget() {
   return `bun-${os}-${arch}`
 }
 
+// 从环境变量生成 --define 参数，将值编译进 sidecar
+function getDefineArgs() {
+  const defines = []
+  const envKeys = ['YOUCLAW_WEBSITE_URL', 'YOUCLAW_API_URL']
+  for (const key of envKeys) {
+    const val = process.env[key]
+    if (val) {
+      defines.push(`--define "process.env.${key}='${val}'"`)
+    }
+  }
+  return defines.join(' ')
+}
+
 function build(bunTarget, outName) {
   const outPath = resolve(binDir, outName)
+  const defineArgs = getDefineArgs()
   console.log(`Building: ${bunTarget} → ${outName}`)
+  if (defineArgs) console.log(`  Defines: ${defineArgs}`)
 
   try {
     execSync(
-      `bun build --compile --target=${bunTarget} src/index.ts --outfile "${outPath}"`,
+      `bun build --compile --target=${bunTarget} ${defineArgs} src/index.ts --outfile "${outPath}"`,
       { cwd: root, stdio: 'inherit' }
     )
     console.log(`  Done: ${outPath}`)

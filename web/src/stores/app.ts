@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { getItem, setItem } from "@/lib/storage"
 import { applyThemeToDOM, type Theme } from "@/hooks/useTheme"
-import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, type AuthUser } from "@/api/client"
+import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, updateProfile as apiUpdateProfile, getCloudStatus, getSettings, updateSettings, type AuthUser } from "@/api/client"
 import { isTauri } from "@/api/transport"
 import type { Locale } from "@/i18n/context"
 
@@ -17,6 +17,12 @@ interface AppState {
   collapseSidebar: () => void
   expandSidebar: () => void
 
+  // Cloud
+  cloudEnabled: boolean
+
+  // Model
+  modelReady: boolean
+
   // Auth
   user: AuthUser | null
   isLoggedIn: boolean
@@ -24,6 +30,7 @@ interface AppState {
   fetchUser: () => Promise<void>
   login: () => Promise<void>
   logout: () => Promise<void>
+  updateProfile: (params: { displayName?: string; avatar?: string }) => Promise<void>
 
   // Credits
   creditBalance: number | null
@@ -61,6 +68,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ sidebarCollapsed: false })
     setItem("sidebar-collapsed", "false")
   },
+
+  // Cloud
+  cloudEnabled: false,
+
+  // Model
+  modelReady: false,
 
   // Auth
   user: null,
@@ -123,6 +136,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ user: null, isLoggedIn: false, creditBalance: null })
   },
 
+  updateProfile: async (params) => {
+    const updatedUser = await apiUpdateProfile(params)
+    set({ user: updatedUser })
+  },
+
   // Credits
   creditBalance: null,
 
@@ -180,12 +198,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     applyThemeToDOM(resolvedTheme)
 
-    // 尝试加载已登录用户
+    // 检查云服务状态 & 模型配置
     try {
-      const { loggedIn } = await getAuthStatus()
-      if (loggedIn) {
-        await get().fetchUser()
-        await get().fetchCreditBalance()
+      const { enabled } = await getCloudStatus()
+      set({ cloudEnabled: enabled })
+      if (enabled) {
+        const { loggedIn } = await getAuthStatus()
+        if (loggedIn) {
+          await get().fetchUser()
+          await get().fetchCreditBalance()
+        }
+      }
+
+      // 拉取模型设置，判断是否可用
+      const settings = await getSettings()
+      const { provider } = settings.activeModel
+
+      if (!enabled && (provider === 'builtin' || provider === 'cloud')) {
+        // 离线模式下内置/云模型不可用，自动切换到 custom
+        await updateSettings({ activeModel: { provider: 'custom' } })
+        // 有自定义模型才算 ready
+        set({ modelReady: settings.customModels.length > 0 })
+      } else if (provider === 'custom') {
+        const model = settings.activeModel.id
+          ? settings.customModels.find((m) => m.id === settings.activeModel.id)
+          : settings.customModels[0]
+        set({ modelReady: !!model })
+      } else {
+        // builtin/cloud 在线模式下可用
+        set({ modelReady: true })
       }
     } catch {
       // 后端未就绪，忽略

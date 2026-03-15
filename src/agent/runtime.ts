@@ -173,8 +173,11 @@ export class AgentRuntime {
 
       return finalText
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      logger.error({ agentId, chatId, error: errorMsg, durationMs: Date.now() - startTime, category: 'agent' }, '消息处理失败')
+      const rawError = err instanceof Error ? err.message : String(err)
+      logger.error({ agentId, chatId, error: rawError, durationMs: Date.now() - startTime, category: 'agent' }, '消息处理失败')
+
+      // 将 SDK 内部错误转为用户友好提示
+      const userError = this.humanizeError(rawError)
 
       // on_error hook
       if (this.hooksManager) {
@@ -182,7 +185,7 @@ export class AgentRuntime {
           agentId,
           chatId,
           phase: 'on_error',
-          payload: { error: errorMsg },
+          payload: { error: rawError },
         })
       }
 
@@ -190,10 +193,10 @@ export class AgentRuntime {
         type: 'error',
         agentId,
         chatId,
-        error: errorMsg,
+        error: userError,
       })
 
-      return `Error: ${errorMsg}`
+      return `Error: ${userError}`
     } finally {
       this.emitProcessing(agentId, chatId, false)
     }
@@ -464,6 +467,29 @@ export class AgentRuntime {
         break
       }
     }
+  }
+
+  /**
+   * 将 SDK 内部错误转为用户可读的提示
+   */
+  private humanizeError(raw: string): string {
+    // SDK 进程崩溃（通常是 API key/网络/模型配置问题）
+    if (/process exited with code/i.test(raw)) {
+      return 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.'
+    }
+    // API 认证失败
+    if (/401|unauthorized|authentication/i.test(raw)) {
+      return 'Model authentication failed. Please check your API Key in Settings → Models.'
+    }
+    // 网络错误
+    if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
+      return 'Cannot reach the model API. Please check your network connection and Base URL.'
+    }
+    // 余额不足
+    if (/insufficient|credit|balance|quota/i.test(raw)) {
+      return 'Insufficient credits or API quota. Please check your account balance.'
+    }
+    return raw
   }
 
   // --- Emit 辅助方法 ---

@@ -365,6 +365,10 @@ export interface AuthUser {
   email?: string
 }
 
+export async function getCloudStatus() {
+  return apiFetch<{ enabled: boolean }>('/api/auth/cloud-status')
+}
+
 export async function getAuthLoginUrl() {
   return apiFetch<{ loginUrl: string }>('/api/auth/login')
 }
@@ -383,6 +387,29 @@ export async function getAuthStatus() {
 
 export async function getPayUrl() {
   return apiFetch<{ payUrl: string }>('/api/auth/pay-url')
+}
+
+export async function uploadFile(file: File): Promise<string> {
+  const base = await getBackendBaseUrl()
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${base}/api/auth/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error || `Upload failed: ${res.status}`)
+  }
+  const data = await res.json() as { url: string }
+  return data.url
+}
+
+export async function updateProfile(params: { displayName?: string; avatar?: string }) {
+  return apiFetch<AuthUser>('/api/auth/update-profile', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
 }
 
 // ===== Credit API =====

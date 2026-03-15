@@ -56,9 +56,15 @@ jobs:
           cdn-base-url: ${{ secrets.CDN_BASE_URL }}
 
       - name: Build sidecar
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
         run: |
           mkdir -p src-tauri/bin
-          bun build --compile --target=${{ matrix.bun_target }} src/index.ts --outfile src-tauri/bin/youclaw-server-${{ matrix.sidecar_suffix }}
+          DEFINES=""
+          [ -n "$YOUCLAW_WEBSITE_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_WEBSITE_URL='$YOUCLAW_WEBSITE_URL'\""
+          [ -n "$YOUCLAW_API_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_API_URL='$YOUCLAW_API_URL'\""
+          eval bun build --compile --target=${{ matrix.bun_target }} $DEFINES src/index.ts --outfile src-tauri/bin/youclaw-server-${{ matrix.sidecar_suffix }}
 
       - name: Import macOS certificates
         uses: apple-actions/import-codesign-certs@v3
@@ -116,9 +122,15 @@ jobs:
 
       - name: Build sidecar
         shell: bash
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
         run: |
           mkdir -p src-tauri/bin
-          bun build --compile --target=bun-windows-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-pc-windows-msvc.exe
+          DEFINES=""
+          [ -n "$YOUCLAW_WEBSITE_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_WEBSITE_URL='$YOUCLAW_WEBSITE_URL'\""
+          [ -n "$YOUCLAW_API_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_API_URL='$YOUCLAW_API_URL'\""
+          eval bun build --compile --target=bun-windows-x64 $DEFINES src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -260,9 +272,15 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build sidecar
+        env:
+          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
+          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
         run: |
           mkdir -p src-tauri/bin
-          bun build --compile --target=bun-linux-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-unknown-linux-gnu
+          DEFINES=""
+          [ -n "$YOUCLAW_WEBSITE_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_WEBSITE_URL='$YOUCLAW_WEBSITE_URL'\""
+          [ -n "$YOUCLAW_API_URL" ] && DEFINES="$DEFINES --define \"process.env.YOUCLAW_API_URL='$YOUCLAW_API_URL'\""
+          eval bun build --compile --target=bun-linux-x64 $DEFINES src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-unknown-linux-gnu
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

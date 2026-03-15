@@ -26,8 +26,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const { isCollapsed, toggle } = useSidebar();
-  const { t, locale, setLocale } = useI18n();
-  const { user, isLoggedIn, authLoading, creditBalance, login } = useAppStore();
+  const { t } = useI18n();
+  const { user, isLoggedIn, authLoading, creditBalance, login, cloudEnabled } = useAppStore();
   const [platform, setPlatform] = useState("");
 
   useEffect(() => {
@@ -145,7 +145,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           className="border-t border-[var(--subtle-border)] py-2 space-y-0.5 px-1.5"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          {/* 用户信息 / 登录按钮 */}
+          {/* 用户信息 / 登录按钮（离线模式不显示） */}
           {isLoggedIn && user ? (
             <button
               type="button"
@@ -181,7 +181,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 </span>
               )}
             </button>
-          ) : (
+          ) : cloudEnabled ? (
             <button
               type="button"
               onClick={() => login()}
@@ -205,7 +205,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 {authLoading ? t.account.loggingIn : t.account.login}
               </span>
             </button>
-          )}
+          ) : null}
 
           {/* 设置 */}
           <div className="flex items-center">
@@ -232,16 +232,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 {t.settings.title}
               </span>
             </button>
-            {!isCollapsed && <div className="flex-1 min-w-0" />}
-            {!isCollapsed && (
-              <button
-                type="button"
-                onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-                className="shrink-0 px-2 py-0.5 rounded-md border border-[var(--subtle-border)] text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)] transition-all duration-200 ease-[var(--ease-soft)]"
-              >
-                {locale === "en" ? "中" : "EN"}
-              </button>
-            )}
           </div>
         </div>
       </aside>

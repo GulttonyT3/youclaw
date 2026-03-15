@@ -59,6 +59,9 @@ const envSchema = z.object({
   WECOM_ENCODING_AES_KEY: z.string().optional(),
   DINGTALK_CLIENT_ID: z.string().optional(),
   DINGTALK_SECRET: z.string().optional(),
+  // 云服务地址（不配置则为离线模式）
+  YOUCLAW_WEBSITE_URL: z.string().optional(),
+  YOUCLAW_API_URL: z.string().optional(),
 })
 
 export type EnvConfig = z.infer<typeof envSchema>

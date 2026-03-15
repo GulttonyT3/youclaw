@@ -27,6 +27,7 @@ import {
   AttachmentRemove,
 } from "@/components/ai-elements/attachments";
 import { Bot, Globe } from "lucide-react";
+import { useAppStore } from "@/stores/app";
 
 // 输入框中的附件预览（textarea 上方）
 function AttachmentPreviews() {
@@ -57,10 +58,16 @@ export function ChatInput() {
     send, chatStatus, stop, agentId, setAgentId, agents,
     browserProfiles, selectedProfileId, setSelectedProfileId,
   } = useChatContext();
+  const modelReady = useAppStore((s) => s.modelReady);
 
   const handleSubmit = async (msg: PromptInputMessage) => {
     const text = msg.text.trim();
     if (!text && msg.files.length === 0) return;
+
+    if (!modelReady) {
+      alert(t.settings.modelNotConfigured);
+      return;
+    }
 
     // 将 data URL 转为 Attachment 对象
     const attachments = msg.files
