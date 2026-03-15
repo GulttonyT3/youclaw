@@ -1,9 +1,7 @@
 import { useEffect } from "react"
-import { isTauri } from "@/api/transport"
+import { useAppStore } from "@/stores/app"
 
 export type Theme = "dark" | "light" | "system"
-
-const THEME_KEY = "youclaw-theme"
 
 export function applyThemeToDOM(theme: Theme): void {
   const body = document.body
@@ -32,49 +30,22 @@ export function applyThemeToDOM(theme: Theme): void {
   })
 }
 
-// 获取保存的主题
-export async function getSavedTheme(): Promise<Theme> {
-  if (isTauri) {
-    try {
-      const { load } = await import("@tauri-apps/plugin-store")
-      const store = await load("settings.json")
-      const theme = await store.get<string>("theme")
-      return (theme as Theme) ?? "system"
-    } catch {
-      return "system"
-    }
-  }
-  return (localStorage.getItem(THEME_KEY) as Theme) ?? "system"
-}
-
-// 保存主题
-export async function saveTheme(theme: Theme): Promise<void> {
-  if (isTauri) {
-    try {
-      const { load } = await import("@tauri-apps/plugin-store")
-      const store = await load("settings.json")
-      await store.set("theme", theme)
-      await store.save()
-    } catch {}
-    return
-  }
-  localStorage.setItem(THEME_KEY, theme)
-}
-
 // 初始化主题的 hook（在 App 根组件使用）
 export function useTheme(): void {
-  useEffect(() => {
-    getSavedTheme().then((theme) => {
-      applyThemeToDOM(theme)
-    })
+  const theme = useAppStore((s) => s.theme)
 
+  useEffect(() => {
+    applyThemeToDOM(theme)
+  }, [theme])
+
+  // 监听系统主题变化
+  useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)")
     const handler = () => {
-      getSavedTheme().then((theme) => {
-        if (theme === "system") {
-          applyThemeToDOM("system")
-        }
-      })
+      const current = useAppStore.getState().theme
+      if (current === "system") {
+        applyThemeToDOM("system")
+      }
     }
     mq.addEventListener("change", handler)
     return () => mq.removeEventListener("change", handler)

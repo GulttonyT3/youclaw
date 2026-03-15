@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use std::net::TcpListener;
 
-/// Sidecar 子进程句柄
+/// Sidecar child process handle
 struct SidecarState(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 #[derive(Clone, Serialize)]
@@ -20,57 +20,42 @@ struct SidecarEvent {
     message: String,
 }
 
-/// 在动态端口范围内找一个可用端口
+/// Find an available port by binding to port 0
 fn find_available_port() -> Result<u16, String> {
-    // 绑定 0 端口让系统分配一个可用端口
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Failed to find available port: {}", e))?;
     let port = listener.local_addr()
         .map_err(|e| format!("Failed to get local addr: {}", e))?
         .port();
-    // listener drop 时释放端口，sidecar 立即绑定
     drop(listener);
     Ok(port)
 }
 
-/// 启动 sidecar 后端
+/// Spawn the sidecar backend
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
-    // 分配随机可用端口
+    // Allocate a random available port
     let port = find_available_port()?;
     log::info!("Allocated random port {} for sidecar", port);
 
-    // 从 Tauri Store 读取设置，注入到环境变量
+    // Model config (API Key, Base URL, Model ID) is now managed by the backend
+    // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
     let mut env_vars: Vec<(String, String)> = vec![];
     env_vars.push(("PORT".into(), port.to_string()));
 
     if let Ok(store) = app.store("settings.json") {
-        if let Some(api_key) = store.get("api-key") {
-            if let Some(key) = api_key.as_str() {
-                if !key.is_empty() {
-                    env_vars.push(("ANTHROPIC_API_KEY".into(), key.to_string()));
-                }
-            }
-        }
-        if let Some(base_url) = store.get("base-url") {
-            if let Some(url) = base_url.as_str() {
-                if !url.is_empty() {
-                    env_vars.push(("ANTHROPIC_BASE_URL".into(), url.to_string()));
-                }
-            }
-        }
-        // 将动态端口写入 store，前端从 store 读取
+        // Write port to store for frontend to read
         let _ = store.set("port", serde_json::Value::String(port.to_string()));
         let _ = store.save();
     }
 
-    // 设置数据目录
+    // Set data directory
     if let Some(app_data) = app.path().app_data_dir().ok() {
         env_vars.push(("DATA_DIR".into(), app_data.to_string_lossy().to_string()));
     }
 
-    // 确保 PATH 包含常见的 bun/node 安装路径（Finder 启动时 PATH 很短）
+    // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder)
     {
         let current_path = std::env::var("PATH").unwrap_or_default();
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/default".into());
@@ -90,7 +75,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         env_vars.push(("PATH".into(), path_parts.join(":")));
     }
 
-    // 设置资源目录（agents/skills/prompts 的只读模板）
+    // Set resource directory (read-only templates for agents/skills/prompts)
     match app.path().resource_dir() {
         Ok(resource_dir) => {
             log::info!("Resource dir: {}", resource_dir.display());
@@ -98,7 +83,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         }
         Err(e) => {
             log::warn!("Failed to get resource_dir: {}, falling back to exe dir", e);
-            // fallback: 可执行文件所在目录的上级 Resources 目录
+            // Fallback: Resources directory relative to the executable
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(macos_dir) = exe.parent() {
                     let resources = macos_dir.parent().unwrap_or(macos_dir).join("Resources");
@@ -120,11 +105,11 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let app_handle = app.clone();
     let (mut rx, child) = cmd.spawn().map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
 
-    // 存储子进程句柄
+    // Store child process handle
     let mut guard = state.0.lock().unwrap();
     *guard = Some(child);
 
-    // 监听 sidecar 输出
+    // Listen to sidecar output
     let app_for_events = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -150,7 +135,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     Ok(port)
 }
 
-/// 等待后端健康检查通过（用标准库发最简 HTTP GET，不依赖 reqwest）
+/// Wait for backend health check using stdlib TCP (no reqwest dependency)
 async fn wait_for_health(port: u16, max_retries: u32) -> Result<(), String> {
     let addr = format!("127.0.0.1:{}", port);
 
@@ -178,13 +163,25 @@ async fn wait_for_health(port: u16, max_retries: u32) -> Result<(), String> {
     Err("Backend health check failed after max retries".into())
 }
 
-/// 杀死 sidecar 进程
+/// Kill the sidecar process
 fn kill_sidecar(app: &AppHandle) {
     let state = app.state::<SidecarState>();
     let mut guard = state.0.lock().unwrap();
     if let Some(child) = guard.take() {
-        let _ = child.kill();
-        log::info!("Sidecar process killed");
+        let pid = child.pid();
+        // Windows: use taskkill /T to kill entire process tree (including bun child processes)
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+            log::info!("Sidecar process tree killed (PID: {})", pid);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = child.kill();
+            log::info!("Sidecar process killed (PID: {})", pid);
+        }
     }
 }
 
@@ -208,20 +205,7 @@ async fn restart_sidecar(app: AppHandle) -> Result<(), String> {
     wait_for_health(port, 30).await
 }
 
-/// 从 store 或默认值获取端口
-#[cfg(debug_assertions)]
-fn get_port(app: &AppHandle) -> u16 {
-    if let Ok(store) = app.store("settings.json") {
-        if let Some(port_val) = store.get("port") {
-            if let Some(p) = port_val.as_str() {
-                if let Ok(port) = p.parse::<u16>() {
-                    return port;
-                }
-            }
-        }
-    }
-    3000
-}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -241,12 +225,12 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // 创建系统托盘
+            // Create system tray
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
-            // 加载托盘专用 template 图标（macOS 菜单栏自动适配深色/浅色模式）
+            // Load template icon for tray (auto-adapts to macOS dark/light mode)
             let tray_icon = Image::from_bytes(include_bytes!("../icons/trayTemplate@2x.png"))
                 .expect("failed to load tray icon");
 
@@ -280,7 +264,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // 启动后端（dev 模式由 beforeDevCommand 启动，release 模式用 sidecar）
+            // Start backend (dev mode uses beforeDevCommand, release mode uses sidecar)
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 let port: u16;
@@ -301,8 +285,23 @@ pub fn run() {
                 }
                 #[cfg(debug_assertions)]
                 {
-                    log::info!("Dev mode: skipping sidecar, using bun dev server");
-                    port = get_port(&app_handle);
+                    // Dev 模式：读 .env 中的 PORT，同步写入 store 供前端使用
+                    port = std::fs::read_to_string(
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
+                    )
+                    .ok()
+                    .and_then(|content| {
+                        content.lines()
+                            .find(|l| l.starts_with("PORT="))
+                            .and_then(|l| l.strip_prefix("PORT="))
+                            .and_then(|v| v.trim().parse::<u16>().ok())
+                    })
+                    .unwrap_or(3000);
+
+                    if let Ok(store) = app_handle.store("settings.json") {
+                        let _ = store.set("port", serde_json::Value::String(port.to_string()));
+                    }
+                    log::info!("Dev mode: skipping sidecar, using bun dev server on port {}", port);
                 }
 
                 match wait_for_health(port, 60).await {
@@ -325,7 +324,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 点击关闭按钮时隐藏到托盘，而非退出
+            // Hide to tray on close instead of quitting
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
@@ -334,8 +333,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                kill_sidecar(app);
+            match event {
+                tauri::RunEvent::Exit => {
+                    kill_sidecar(app);
+                }
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                    if !has_visible_windows {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                }
+                _ => {}
             }
         });
 }

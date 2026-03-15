@@ -356,6 +356,91 @@ export async function getScheduledTaskLogs(id: string) {
   return apiFetch<TaskRunLogDTO[]>(`/api/tasks/${id}/logs`)
 }
 
+// ===== Auth API =====
+
+export interface AuthUser {
+  id: string
+  name: string
+  avatar: string
+  email?: string
+}
+
+export async function getAuthLoginUrl() {
+  return apiFetch<{ loginUrl: string }>('/api/auth/login')
+}
+
+export async function getAuthUser() {
+  return apiFetch<AuthUser>('/api/auth/user')
+}
+
+export async function authLogout() {
+  return apiFetch<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
+}
+
+export async function getAuthStatus() {
+  return apiFetch<{ loggedIn: boolean }>('/api/auth/status')
+}
+
+export async function getPayUrl() {
+  return apiFetch<{ payUrl: string }>('/api/auth/pay-url')
+}
+
+// ===== Credit API =====
+
+export interface CreditBalance {
+  balance: number
+}
+
+export interface CreditTransaction {
+  id: string
+  amount: number
+  type: string
+  description: string
+  created_at: string
+}
+
+export async function getCreditBalance() {
+  return apiFetch<CreditBalance>('/api/credit/balance')
+}
+
+export async function getCreditTransactions(params?: { page?: number; limit?: number }) {
+  const qs = new URLSearchParams()
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const q = qs.toString()
+  return apiFetch<{ items: CreditTransaction[]; total: number }>(`/api/credit/transactions${q ? `?${q}` : ''}`)
+}
+
+// ===== Settings API =====
+
+export interface CustomModelDTO {
+  id: string
+  name: string
+  provider: 'anthropic' | 'openai' | 'gemini' | 'custom'
+  apiKey: string
+  baseUrl: string
+  modelId: string
+}
+
+export interface SettingsDTO {
+  activeModel: {
+    provider: 'builtin' | 'custom' | 'cloud'
+    id?: string
+  }
+  customModels: CustomModelDTO[]
+}
+
+export async function getSettings() {
+  return apiFetch<SettingsDTO>('/api/settings')
+}
+
+export async function updateSettings(data: Partial<SettingsDTO>) {
+  return apiFetch<SettingsDTO>('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
 // ===== 系统日志 API =====
 
 export interface LogEntry {

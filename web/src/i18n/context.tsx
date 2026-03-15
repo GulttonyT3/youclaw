@@ -1,41 +1,21 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { en } from './en'
 import { zh } from './zh'
 import type { Translations } from './types'
-
-export type Locale = 'en' | 'zh'
-
-interface I18nContextType {
-  locale: Locale
-  t: Translations
-  setLocale: (locale: Locale) => void
-}
+import { useAppStore } from '@/stores/app'
+import { I18nContext, type Locale } from './ctx'
 
 const locales: Record<Locale, Translations> = { en, zh }
 
-const I18nContext = createContext<I18nContextType>({
-  locale: 'en',
-  t: en,
-  setLocale: () => {},
-})
+export type { Locale } from './ctx'
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(
-    () => (localStorage.getItem('youclaw-locale') as Locale) || 'en',
-  )
-
-  const setLocale = (l: Locale) => {
-    localStorage.setItem('youclaw-locale', l)
-    setLocaleState(l)
-  }
+  const locale = useAppStore((s) => s.locale)
+  const setLocale = useAppStore((s) => s.setLocale)
 
   return (
     <I18nContext.Provider value={{ locale, t: locales[locale], setLocale }}>
       {children}
     </I18nContext.Provider>
   )
-}
-
-export function useI18n() {
-  return useContext(I18nContext)
 }

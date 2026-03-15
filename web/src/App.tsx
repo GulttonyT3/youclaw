@@ -1,35 +1,36 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { Shell } from './components/layout/Shell'
 import { Chat } from './pages/Chat'
 import { Agents } from './pages/Agents'
-import { Skills } from './pages/Skills'
 import { Memory } from './pages/Memory'
 import { Tasks } from './pages/Tasks'
-import { System } from './pages/System'
-import { Channels } from './pages/Channels'
-import { Logs } from './pages/Logs'
-import { BrowserProfiles } from './pages/BrowserProfiles'
+import { Login } from './pages/Login'
 import { useTheme } from './hooks/useTheme'
+import { useAppStore } from './stores/app'
+
+function AuthGuard() {
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn)
+  if (!isLoggedIn) return <Navigate to="/login" replace />
+  return <Shell><Outlet /></Shell>
+}
 
 // Tauri devUrl 是 http 协议，可以直接用 BrowserRouter
 export default function App() {
   useTheme()
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn)
 
   return (
     <BrowserRouter>
-      <Shell>
-        <Routes>
+      <Routes>
+        <Route path="/login" element={isLoggedIn ? <Navigate to="/" replace /> : <Login />} />
+        <Route element={<AuthGuard />}>
           <Route path="/" element={<Chat />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/cron" element={<Tasks />} />
           <Route path="/memory" element={<Memory />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/channels" element={<Channels />} />
-          <Route path="/browser" element={<BrowserProfiles />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/system" element={<System />} />
-        </Routes>
-      </Shell>
+        </Route>
+        <Route path="*" element={<Navigate to={isLoggedIn ? "/" : "/login"} replace />} />
+      </Routes>
     </BrowserRouter>
   )
 }
