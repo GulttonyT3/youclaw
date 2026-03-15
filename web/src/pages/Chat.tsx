@@ -262,7 +262,7 @@ export function Chat() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setAvatarPickerChatId(chat.chat_id);
+                                setTimeout(() => setAvatarPickerChatId(chat.chat_id), 100);
                               }}
                             >
                               <Palette className="h-3.5 w-3.5 mr-2" />
