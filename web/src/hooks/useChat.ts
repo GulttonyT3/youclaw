@@ -26,6 +26,7 @@ export function useChat(agentId: string) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [pendingToolUse, setPendingToolUse] = useState<ToolUseItem[]>([])
   const [chatStatus, setChatStatus] = useState<'submitted' | 'streaming' | 'ready' | 'error'>('ready')
+  const [showInsufficientCredits, setShowInsufficientCredits] = useState(false)
 
   const pendingToolUseRef = useRef<ToolUseItem[]>([])
   useEffect(() => { pendingToolUseRef.current = pendingToolUse }, [pendingToolUse])
@@ -69,6 +70,10 @@ export function useChat(agentId: string) {
       case 'error':
         setChatStatus('error')
         setTimeout(() => setChatStatus('ready'), 2000)
+        // Show insufficient credits dialog when balance is low
+        if (event.errorCode === 'INSUFFICIENT_CREDITS') {
+          setShowInsufficientCredits(true)
+        }
         // Show error to user instead of silently swallowing it
         if (event.error) {
           setMessages(prev => [...prev, {
@@ -182,5 +187,5 @@ export function useChat(agentId: string) {
     setPendingToolUse([])
   }, [closeSSE])
 
-  return { chatId, messages, streamingText, isProcessing, pendingToolUse, chatStatus, send, loadChat, newChat, stop }
+  return { chatId, messages, streamingText, isProcessing, pendingToolUse, chatStatus, send, loadChat, newChat, stop, showInsufficientCredits, setShowInsufficientCredits }
 }

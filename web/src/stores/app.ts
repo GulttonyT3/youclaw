@@ -1,8 +1,8 @@
 import { create } from "zustand"
 import { getItem, setItem } from "@/lib/storage"
 import { applyThemeToDOM, type Theme } from "@/hooks/useTheme"
-import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, updateProfile as apiUpdateProfile, getCloudStatus, getSettings, updateSettings, getPortConfig, setPortConfig, type AuthUser } from "@/api/client"
-import { isTauri, getPortConflict } from "@/api/transport"
+import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, updateProfile as apiUpdateProfile, getCloudStatus, getSettings, updateSettings, saveAuthToken, type AuthUser } from "@/api/client"
+import { isTauri } from "@/api/transport"
 import type { Locale } from "@/i18n/context"
 
 interface AppState {
@@ -16,13 +16,6 @@ interface AppState {
   toggleSidebar: () => void
   collapseSidebar: () => void
   expandSidebar: () => void
-
-  // Port
-  preferredPort: string | null
-  portConflict: string | null
-  setPreferredPort: (port: string | null) => Promise<void>
-  restartBackend: () => Promise<void>
-  clearPortConflict: () => void
 
   // Cloud
   cloudEnabled: boolean
@@ -76,29 +69,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     setItem("sidebar-collapsed", "false")
   },
 
-  // Port
-  preferredPort: null,
-  portConflict: null,
-
-  setPreferredPort: async (port) => {
-    if (isTauri) {
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('set_preferred_port', { port })
-    } else {
-      await setPortConfig(port)
-    }
-    set({ preferredPort: port })
-  },
-
-  restartBackend: async () => {
-    if (!isTauri) return
-    set({ portConflict: null })
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('restart_sidecar')
-  },
-
-  clearPortConflict: () => set({ portConflict: null }),
-
   // Cloud
   cloudEnabled: false,
 
@@ -114,11 +84,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       set({ authLoading: true })
       const user = await getAuthUser()
-      // Generate a default username from user id if backend returns no name
+      // Construct a default username from user id when backend doesn't return one
       if (!user.name) {
         user.name = `User_${user.id.slice(0, 6)}`
       }
-      // Use default avatar if backend returns none
+      // Use default avatar when backend doesn't return one
       if (!user.avatar) {
         user.avatar = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.name)}`
       }
@@ -130,35 +100,66 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   login: async () => {
     try {
-      const { loginUrl } = await getAuthLoginUrl()
-      // Open login page in browser
+      set({ authLoading: true })
+
       if (isTauri) {
+        // Tauri mode: use deep link callback
+        const { loginUrl } = await getAuthLoginUrl('tauri')
         const { openUrl } = await import('@tauri-apps/plugin-opener')
         await openUrl(loginUrl)
-      } else {
-        window.open(loginUrl, '_blank')
-      }
 
-      // Poll until login completes
-      set({ authLoading: true })
-      const pollInterval = setInterval(async () => {
-        try {
-          const { loggedIn } = await getAuthStatus()
-          if (loggedIn) {
-            clearInterval(pollInterval)
-            await get().fetchUser()
-            await get().fetchCreditBalance()
+        // Listen for deep link events
+        const { listen } = await import('@tauri-apps/api/event')
+        let timeoutId: ReturnType<typeof setTimeout>
+        const unlisten = await listen<string>('deep-link-received', async (event) => {
+          try {
+            const url = new URL(event.payload)
+            if (url.host === 'auth' || url.pathname.startsWith('/auth/callback') || url.pathname.startsWith('auth/callback')) {
+              const token = url.searchParams.get('token')
+              if (token) {
+                await saveAuthToken(token)
+                await get().fetchUser()
+                await get().fetchCreditBalance()
+              }
+            }
+          } catch (err) {
+            console.error('Deep link auth failed:', err)
+          } finally {
+            unlisten()
+            clearTimeout(timeoutId)
+            set({ authLoading: false })
           }
-        } catch {
-          // Continue polling
-        }
-      }, 2000)
+        })
 
-      // 60 second timeout
-      setTimeout(() => {
-        clearInterval(pollInterval)
-        set({ authLoading: false })
-      }, 60000)
+        // 120 second timeout
+        timeoutId = setTimeout(() => {
+          unlisten()
+          set({ authLoading: false })
+        }, 120000)
+      } else {
+        // Web mode: keep polling logic
+        const { loginUrl } = await getAuthLoginUrl()
+        window.open(loginUrl, '_blank')
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const { loggedIn } = await getAuthStatus()
+            if (loggedIn) {
+              clearInterval(pollInterval)
+              await get().fetchUser()
+              await get().fetchCreditBalance()
+            }
+          } catch {
+            // Continue polling
+          }
+        }, 2000)
+
+        // 60 second timeout
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          set({ authLoading: false })
+        }, 60000)
+      }
     } catch (err) {
       console.error('Login failed:', err)
       set({ authLoading: false })
@@ -169,7 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await authLogout()
     } catch {
-      // Clear local state even if remote logout fails
+      // Clean up local state even if remote logout fails
     }
     set({ user: null, isLoggedIn: false, creditBalance: null })
   },
@@ -193,30 +194,51 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openPayPage: async () => {
     try {
-      const { payUrl } = await getPayUrl()
       if (isTauri) {
+        // Tauri mode: use deep link callback
+        const { payUrl } = await getPayUrl('tauri')
         const { openUrl } = await import('@tauri-apps/plugin-opener')
         await openUrl(payUrl)
-      } else {
-        window.open(payUrl, '_blank')
-      }
 
-      // Poll for balance changes
-      const oldBalance = get().creditBalance
-      const pollInterval = setInterval(async () => {
-        try {
-          const { balance } = await getCreditBalance()
-          if (balance !== oldBalance) {
-            clearInterval(pollInterval)
-            set({ creditBalance: balance })
+        // Listen for deep link payment callback
+        const { listen } = await import('@tauri-apps/api/event')
+        let timeoutId: ReturnType<typeof setTimeout>
+        const unlisten = await listen<string>('deep-link-received', async (event) => {
+          try {
+            const url = new URL(event.payload)
+            if (url.host === 'pay' || url.pathname.startsWith('/pay/callback') || url.pathname.startsWith('pay/callback')) {
+              await get().fetchCreditBalance()
+            }
+          } catch {
+            // Ignore parse errors
+          } finally {
+            unlisten()
+            clearTimeout(timeoutId)
           }
-        } catch {
-          // Continue polling
-        }
-      }, 3000)
+        })
 
-      // Stop polling after 120 second timeout
-      setTimeout(() => clearInterval(pollInterval), 120000)
+        // 120 second timeout
+        timeoutId = setTimeout(() => unlisten(), 120000)
+      } else {
+        // Web mode: keep polling logic
+        const { payUrl } = await getPayUrl()
+        window.open(payUrl, '_blank')
+
+        const oldBalance = get().creditBalance
+        const pollInterval = setInterval(async () => {
+          try {
+            const { balance } = await getCreditBalance()
+            if (balance !== oldBalance) {
+              clearInterval(pollInterval)
+              set({ creditBalance: balance })
+            }
+          } catch {
+            // Continue polling
+          }
+        }, 3000)
+
+        setTimeout(() => clearInterval(pollInterval), 120000)
+      }
     } catch (err) {
       console.error('Open pay page failed:', err)
     }
@@ -236,16 +258,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     applyThemeToDOM(resolvedTheme)
 
-    // Read port config and conflict status
-    if (isTauri) {
-      const preferredPort = await getItem('preferredPort')
-      set({ preferredPort })
-    }
-    const conflict = getPortConflict()
-    if (conflict) {
-      set({ portConflict: conflict })
-    }
-
     // Check cloud service status & model configuration
     try {
       const { enabled } = await getCloudStatus()
@@ -258,14 +270,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      // Fetch model settings and check availability
+      // Fetch model settings to determine availability
       const settings = await getSettings()
       const { provider } = settings.activeModel
 
       if (!enabled && (provider === 'builtin' || provider === 'cloud')) {
-        // Built-in/cloud models unavailable in offline mode, auto-switch to custom
+        // Builtin/cloud models unavailable in offline mode, auto-switch to custom
         await updateSettings({ activeModel: { provider: 'custom' } })
-        // Only ready if custom models exist
+        // Only considered ready when custom models exist
         set({ modelReady: settings.customModels.length > 0 })
       } else if (provider === 'custom') {
         const model = settings.activeModel.id
@@ -273,7 +285,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : settings.customModels[0]
         set({ modelReady: !!model })
       } else {
-        // builtin/cloud available in online mode
+        // Builtin/cloud models available in online mode
         set({ modelReady: true })
       }
     } catch {

@@ -1,9 +1,19 @@
+// Error codes for frontend to identify specific errors and show corresponding UI
+export enum ErrorCode {
+  INSUFFICIENT_CREDITS = 'INSUFFICIENT_CREDITS',
+  AUTH_FAILED = 'AUTH_FAILED',
+  MODEL_CONNECTION_FAILED = 'MODEL_CONNECTION_FAILED',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  RATE_LIMITED = 'RATE_LIMITED',
+  UNKNOWN = 'UNKNOWN',
+}
+
 // Agent event types
 export type AgentEvent =
   | { type: 'stream'; agentId: string; chatId: string; text: string }
   | { type: 'tool_use'; agentId: string; chatId: string; tool: string; input?: string }
   | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string }
-  | { type: 'error'; agentId: string; chatId: string; error: string }
+  | { type: 'error'; agentId: string; chatId: string; error: string; errorCode?: ErrorCode }
   | { type: 'processing'; agentId: string; chatId: string; isProcessing: boolean }
   // Phase 3: Sub-agent events
   | { type: 'subagent_started'; agentId: string; chatId: string; taskId: string; description: string }

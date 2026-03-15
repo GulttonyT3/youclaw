@@ -6,11 +6,13 @@ import { getEnv } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { getSession, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
+import { ErrorCode } from '../events/types.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
 import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import { resolveMcpServers } from './mcp-utils.ts'
 import { getActiveModelConfig } from '../settings/manager.ts'
+import { getAuthToken } from '../routes/auth.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 
 // Resolve claude-agent-sdk cli.js path
@@ -119,7 +121,18 @@ export class AgentRuntime {
         }
         logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, 'Model config loaded')
       } else {
+        // 切回内置模型时，清除之前自定义模型设置的环境变量，避免 SDK 继续使用旧配置
+        if (env.ANTHROPIC_API_KEY) {
+          process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY
+        }
+        delete process.env.ANTHROPIC_BASE_URL
         logger.info({ model, baseUrl: process.env.ANTHROPIC_BASE_URL || '(default)' }, 'Using env var model config')
+      }
+
+      // 将用户 auth token 注入到 SDK 请求 header 中
+      const authToken = getAuthToken()
+      if (authToken) {
+        process.env.ANTHROPIC_CUSTOM_HEADERS = `rdxtoken: ${authToken}`
       }
 
       const { fullText, sessionId } = await this.executeQuery(
@@ -180,7 +193,7 @@ export class AgentRuntime {
       logger.error({ agentId, chatId, error: rawError, durationMs: Date.now() - startTime, category: 'agent' }, 'Message processing failed')
 
       // Convert SDK internal errors to user-friendly messages
-      const userError = this.humanizeError(rawError)
+      const { message: userError, errorCode } = this.humanizeError(rawError)
 
       // on_error hook
       if (this.hooksManager) {
@@ -197,6 +210,7 @@ export class AgentRuntime {
         agentId,
         chatId,
         error: userError,
+        errorCode,
       })
 
       return `Error: ${userError}`
@@ -473,26 +487,30 @@ export class AgentRuntime {
   }
 
   /**
-   * Convert SDK internal errors to user-readable messages
+   * Convert SDK internal errors to user-readable messages with error codes
    */
-  private humanizeError(raw: string): string {
+  private humanizeError(raw: string): { message: string; errorCode: ErrorCode } {
     // SDK process crash (usually API key/network/model config issue)
     if (/process exited with code/i.test(raw)) {
-      return 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.'
+      return { message: 'Model connection failed. Please check your model configuration (API Key, Base URL) in Settings → Models.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
     }
     // API authentication failure
     if (/401|unauthorized|authentication/i.test(raw)) {
-      return 'Model authentication failed. Please check your API Key in Settings → Models.'
+      return { message: 'Model authentication failed. Please check your API Key in Settings → Models.', errorCode: ErrorCode.AUTH_FAILED }
     }
     // Network error
     if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
-      return 'Cannot reach the model API. Please check your network connection and Base URL.'
+      return { message: 'Cannot reach the model API. Please check your network connection and Base URL.', errorCode: ErrorCode.NETWORK_ERROR }
     }
-    // Insufficient balance
+    // Insufficient balance/credits
     if (/insufficient|credit|balance|quota/i.test(raw)) {
-      return 'Insufficient credits or API quota. Please check your account balance.'
+      return { message: 'Insufficient credits or API quota. Please check your account balance.', errorCode: ErrorCode.INSUFFICIENT_CREDITS }
     }
-    return raw
+    // Rate limiting
+    if (/rate.?limit|too many requests|429/i.test(raw)) {
+      return { message: 'Request rate limited. Please try again later.', errorCode: ErrorCode.RATE_LIMITED }
+    }
+    return { message: raw, errorCode: ErrorCode.UNKNOWN }
   }
 
   // --- Emit helper methods ---
