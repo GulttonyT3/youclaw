@@ -139,6 +139,10 @@ function detectSystemProxy(): void {
 
   // Skip if proxy env vars are already set
   if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy) {
+    safeLog('info', 'Proxy env vars already set, skipping system proxy detection', {
+      HTTPS_PROXY: process.env.HTTPS_PROXY || process.env.https_proxy || '(not set)',
+      HTTP_PROXY: process.env.HTTP_PROXY || process.env.http_proxy || '(not set)',
+    })
     return
   }
 
@@ -155,9 +159,12 @@ function detectSystemProxy(): void {
         safeLog('info', 'Detected macOS system proxy', { proxyUrl })
       }
     }
-  } catch {
-    // networksetup not available or failed — skip silently
+  } catch (proxyErr) {
+    safeLog('info', 'System proxy detection failed or unavailable', {
+      error: proxyErr instanceof Error ? proxyErr.message : String(proxyErr),
+    })
   }
+  safeLog('info', 'No system proxy detected')
 }
 
 // Deferred startup checks — run once on first executeQuery() call
@@ -252,6 +259,14 @@ export class AgentRuntime {
           delete process.env.ANTHROPIC_BASE_URL
         }
         logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, 'Model config loaded')
+        logger.debug({
+          agentId, chatId,
+          provider: modelConfig.provider,
+          modelId: modelConfig.modelId,
+          baseUrl: modelConfig.baseUrl || '(default)',
+          apiKeyPrefix: modelConfig.apiKey ? modelConfig.apiKey.slice(0, 8) + '***' : '(not set)',
+          category: 'agent',
+        }, 'Model config details')
       } else {
         // No model config available, clear env vars to prevent using user's system env vars
         delete process.env.ANTHROPIC_API_KEY
@@ -283,13 +298,41 @@ export class AgentRuntime {
         if (modelConfig.provider === 'builtin' && authToken) {
           preflightHeaders['rdxtoken'] = authToken
         }
+        const preflightUrl = `${modelConfig.baseUrl}/v1/messages`
+        const preflightBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] })
+        const preflightStartTime = Date.now()
+        logger.debug({
+          agentId, chatId,
+          url: preflightUrl,
+          headers: {
+            'Content-Type': preflightHeaders['Content-Type'],
+            'anthropic-version': preflightHeaders['anthropic-version'],
+            'x-api-key': preflightHeaders['x-api-key'] ? preflightHeaders['x-api-key'].slice(0, 8) + '***' : '(not set)',
+            rdxtoken: preflightHeaders['rdxtoken'] ? '(set)' : '(not set)',
+          },
+          bodyLength: preflightBody.length,
+          category: 'agent',
+        }, 'Pre-flight request starting')
         try {
-          const preflight = await fetch(`${modelConfig.baseUrl}/v1/messages`, {
+          const preflight = await fetch(preflightUrl, {
             method: 'POST',
             headers: preflightHeaders,
-            body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }),
+            body: preflightBody,
             signal: AbortSignal.timeout(15000),
           })
+          const preflightDurationMs = Date.now() - preflightStartTime
+          logger.debug({
+            agentId, chatId,
+            status: preflight.status,
+            statusText: preflight.statusText,
+            durationMs: preflightDurationMs,
+            responseHeaders: {
+              'content-type': preflight.headers.get('content-type'),
+              'x-request-id': preflight.headers.get('x-request-id'),
+              'retry-after': preflight.headers.get('retry-after'),
+            },
+            category: 'agent',
+          }, 'Pre-flight response received')
           logger.info({
             agentId, chatId,
             preflightStatus: preflight.status,
@@ -305,16 +348,39 @@ export class AgentRuntime {
             logger.warn({ agentId, chatId, status: preflight.status, body: body.slice(0, 200), category: 'agent' }, 'API server error in pre-flight')
           }
         } catch (err) {
+          const preflightErrorDurationMs = Date.now() - preflightStartTime
           if (err instanceof Error && err.message.startsWith('API authentication failed')) {
             throw err
           }
           if (err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'))) {
+            logger.debug({
+              agentId, chatId,
+              errorType: 'timeout',
+              durationMs: preflightErrorDurationMs,
+              url: preflightUrl,
+              category: 'agent',
+            }, 'Pre-flight request timed out')
             throw new Error(`Cannot reach model API at ${modelConfig.baseUrl} (timeout after 15s). Please check your network connection.`)
           }
           if (err instanceof Error && /ECONNREFUSED|ENOTFOUND|fetch failed/.test(err.message)) {
+            logger.debug({
+              agentId, chatId,
+              errorType: 'network',
+              errorName: err.name,
+              errorMessage: err.message,
+              durationMs: preflightErrorDurationMs,
+              url: preflightUrl,
+              category: 'agent',
+            }, 'Pre-flight network error')
             throw new Error(`Cannot reach model API at ${modelConfig.baseUrl}: ${err.message}`)
           }
-          logger.warn({ agentId, chatId, error: String(err), category: 'agent' }, 'API pre-flight check failed, proceeding with SDK anyway')
+          logger.warn({
+            agentId, chatId,
+            error: String(err),
+            errorType: err instanceof Error ? err.name : 'unknown',
+            durationMs: preflightErrorDurationMs,
+            category: 'agent',
+          }, 'API pre-flight check failed, proceeding with SDK anyway')
         }
       }
 
@@ -455,6 +521,13 @@ export class AgentRuntime {
 
     const cliPath = resolveCliPath()
     ensureStartupChecks(cliPath)
+    // Determine JS runtime executable for SDK subprocess
+    // In Tauri bundled mode, process.execPath is the compiled sidecar binary which cannot
+    // run external JS files. Fall back to 'bun' (or 'node') so the SDK spawns cli.js
+    // with a proper JS runtime instead.
+    const isBundledSidecar = process.execPath.includes('.app/') || process.execPath.includes('youclaw-server')
+    const executable = isBundledSidecar ? 'bun' : process.execPath
+
     const queryOptions: Record<string, unknown> = {
       model,
       cwd,
@@ -463,10 +536,10 @@ export class AgentRuntime {
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       pathToClaudeCodeExecutable: cliPath,
-      executable: process.execPath,
+      executable,
       ...(existingSessionId ? { resume: existingSessionId } : {}),
     }
-    logger.info({ cliPath, executable: process.execPath, category: 'agent' }, 'SDK executable config')
+    logger.info({ cliPath, executable, isBundledSidecar, category: 'agent' }, 'SDK executable config')
 
     // Sub-agent config (compile ref references via AgentCompiler)
     if (this.config.agents) {
@@ -496,6 +569,33 @@ export class AgentRuntime {
     }
 
     const queryStartTime = Date.now()
+
+    // Log full query options and env snapshot for debugging
+    logger.debug({
+      agentId, chatId,
+      queryOptions: {
+        model: queryOptions.model,
+        cwd: queryOptions.cwd,
+        systemPromptLength: systemPrompt.length,
+        systemPromptPreview: systemPrompt.slice(0, 200) + (systemPrompt.length > 200 ? '...' : ''),
+        permissionMode: queryOptions.permissionMode,
+        hasResume: !!queryOptions.resume,
+        resumeSessionId: queryOptions.resume || '(new session)',
+        hasAgents: !!queryOptions.agents,
+        hasMcpServers: !!queryOptions.mcpServers,
+        maxTurns: queryOptions.maxTurns || '(default)',
+        allowedTools: queryOptions.allowedTools || '(all)',
+        disallowedTools: queryOptions.disallowedTools || '(none)',
+      },
+      envSnapshot: {
+        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '(not set)',
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice(0, 8) + '***' : '(not set)',
+        ANTHROPIC_CUSTOM_HEADERS: process.env.ANTHROPIC_CUSTOM_HEADERS ? '(set)' : '(not set)',
+        HTTPS_PROXY: process.env.HTTPS_PROXY || process.env.https_proxy || '(not set)',
+        HTTP_PROXY: process.env.HTTP_PROXY || process.env.http_proxy || '(not set)',
+      },
+      category: 'agent',
+    }, 'Full SDK query options and env snapshot')
 
     let q
     if (attachments && attachments.length > 0) {
@@ -554,6 +654,9 @@ export class AgentRuntime {
 
     try {
       const iterator = q[Symbol.asyncIterator]()
+      logger.debug({ agentId, chatId, category: 'agent' }, 'SDK async iterator created, waiting for first message')
+      let messageIndex = 0
+      let lastMessageTime = Date.now()
       // eslint-disable-next-line no-constant-condition
       while (true) {
         // Race between next message and first-message timeout (only before first message)
@@ -562,8 +665,22 @@ export class AgentRuntime {
           ? await nextPromise
           : await Promise.race([nextPromise, firstMessagePromise])
 
-        if (result.done) break
+        if (result.done) {
+          logger.debug({ agentId, chatId, totalMessages: messageIndex, category: 'agent' }, 'SDK message stream ended')
+          break
+        }
         const message = result.value
+        const now = Date.now()
+        const gapMs = now - lastMessageTime
+        lastMessageTime = now
+        messageIndex++
+        logger.debug({
+          agentId, chatId,
+          messageType: message.type,
+          messageIndex,
+          gapMs,
+          category: 'agent',
+        }, `SDK message #${messageIndex}: ${message.type}`)
 
         if (!firstMessageReceived) {
           firstMessageReceived = true
