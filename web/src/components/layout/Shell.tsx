@@ -28,7 +28,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <PlatformContext.Provider value={platformCtx}>
       <ChatProvider>
         <div className="h-screen flex flex-col bg-background text-foreground">
-          {/* Windows: custom title bar spanning full width */}
+          {/* Windows: full-width titlebar at top */}
           {isWin && <WindowsTitleBar />}
           <div className="flex-1 flex overflow-hidden">
             <AppSidebar onOpenSettings={(tab) => { setSettingsTab(tab as SettingsTab); setSettingsOpen(true) }} />

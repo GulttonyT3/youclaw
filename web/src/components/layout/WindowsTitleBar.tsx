@@ -1,7 +1,7 @@
 import { Minus, Square, X } from 'lucide-react'
 
 /**
- * Windows custom title bar: drag region + minimize/maximize/close
+ * Windows custom title bar: full-width drag region + minimize/maximize/close
  */
 export function WindowsTitleBar() {
   const handleMinimize = () => {
@@ -27,7 +27,7 @@ export function WindowsTitleBar() {
 
   return (
     <div
-      className="h-8 shrink-0 flex items-center select-none"
+      className="h-9 shrink-0 flex items-center select-none border-b border-[var(--subtle-border)]"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       {/* Drag region fills remaining space */}

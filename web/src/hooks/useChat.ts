@@ -76,14 +76,22 @@ export function useChat(agentId: string) {
         setTimeout(() => setChatStatus('ready'), 2000)
         if (event.errorCode === 'INSUFFICIENT_CREDITS') {
           setShowInsufficientCredits(true)
-          // Insufficient credits: mark with errorCode, rendered as i18n content by AssistantMessage
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: '',
-            timestamp: new Date().toISOString(),
-            errorCode: 'INSUFFICIENT_CREDITS',
-          }])
+          // Replace last assistant message (may contain upstream error from complete event)
+          // with a clean INSUFFICIENT_CREDITS marker
+          setMessages(prev => {
+            // Drop the last assistant message if it was just added from this turn
+            const last = prev[prev.length - 1]
+            const base = (last && last.role === 'assistant' && !last.errorCode)
+              ? prev.slice(0, -1)
+              : prev
+            return [...base, {
+              id: Date.now().toString(),
+              role: 'assistant' as const,
+              content: '',
+              timestamp: new Date().toISOString(),
+              errorCode: 'INSUFFICIENT_CREDITS',
+            }]
+          })
         } else if (event.error) {
           setMessages(prev => [...prev, {
             id: Date.now().toString(),
