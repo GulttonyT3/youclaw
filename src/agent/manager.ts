@@ -12,6 +12,7 @@ import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import type { AgentRouter } from './router.ts'
 import type { SecretsManager } from './secrets.ts'
+import type { SkillsLoader } from '../skills/loader.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
 import {
   DEFAULT_AGENT_YAML, DEFAULT_SOUL_MD, DEFAULT_AGENT_MD,
@@ -26,6 +27,7 @@ export class AgentManager {
   private hooksManager: HooksManager | null
   private agentRouter: AgentRouter | null
   private secretsManager: SecretsManager | null
+  private skillsLoader: SkillsLoader | null
 
   constructor(
     eventBus: EventBus,
@@ -34,6 +36,7 @@ export class AgentManager {
     hooksManager?: HooksManager,
     agentRouter?: AgentRouter,
     secretsManager?: SecretsManager,
+    skillsLoader?: SkillsLoader,
   ) {
     this.eventBus = eventBus
     this.promptBuilder = promptBuilder
@@ -41,6 +44,7 @@ export class AgentManager {
     this.hooksManager = hooksManager ?? null
     this.agentRouter = agentRouter ?? null
     this.secretsManager = secretsManager ?? null
+    this.skillsLoader = skillsLoader ?? null
   }
 
   /**
@@ -181,6 +185,15 @@ export class AgentManager {
             queueDepth: 0,
           },
         })
+
+        // Sync .claude/skills/ symlinks for SDK discovery
+        if (this.skillsLoader) {
+          try {
+            this.skillsLoader.syncAgentClaudeSkills(config, agentDir)
+          } catch (err) {
+            logger.warn({ agentId: config.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to sync .claude/skills/')
+          }
+        }
 
         logger.info({ agentId: config.id, name: config.name }, 'Agent loaded')
       } catch (err) {

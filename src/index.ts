@@ -74,6 +74,7 @@ async function main() {
     hooksManager,
     agentRouter,
     secretsManager,
+    skillsLoader,
   )
   await agentManager.loadAgents()
 

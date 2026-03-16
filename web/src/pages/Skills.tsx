@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getSkills,
+  getSkillAgents,
   configureSkillEnv,
   installSkill,
   toggleSkill,
@@ -77,6 +78,17 @@ export function Skills() {
   const [marketplaceSort, setMarketplaceSort] = useState<MarketplaceSort>('trending')
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleteAffectedAgents, setDeleteAffectedAgents] = useState<Array<{ id: string; name: string }>>([])
+
+  useEffect(() => {
+    if (deleteTarget) {
+      getSkillAgents(deleteTarget)
+        .then(res => setDeleteAffectedAgents(res.agents))
+        .catch(() => setDeleteAffectedAgents([]))
+    } else {
+      setDeleteAffectedAgents([])
+    }
+  }, [deleteTarget])
 
   // Unified search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -91,7 +103,10 @@ export function Skills() {
   }
 
   const loadSkills = useCallback(() => {
-    getSkills().then(setSkills).catch(() => {})
+    getSkills().then((data) => {
+      setSkills(data)
+      window.dispatchEvent(new CustomEvent('skills-changed'))
+    }).catch(() => {})
   }, [])
 
   const loadMarketplace = useCallback(
@@ -496,10 +511,7 @@ export function Skills() {
                   <MarketplaceCard
                     key={skill.slug}
                     skill={skill}
-                    onChanged={() => {
-                      loadRecommended()
-                      loadSkills()
-                    }}
+                    onChanged={loadSkills}
                   />
                 ))}
               </div>
@@ -511,10 +523,7 @@ export function Skills() {
                   <MarketplaceCard
                     key={skill.slug}
                     skill={skill}
-                    onChanged={() => {
-                      loadMarketplace()
-                      loadSkills()
-                    }}
+                    onChanged={loadSkills}
                   />
                 ))}
               </div>
@@ -543,6 +552,19 @@ export function Skills() {
             <AlertDialogTitle>{t.skills.deleteSkill}</AlertDialogTitle>
             <AlertDialogDescription>{t.skills.confirmDeleteSkill}</AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteAffectedAgents.length > 0 && (
+            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 space-y-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-yellow-500">
+                <AlertTriangle className="h-4 w-4" />
+                <span>{t.skills.deleteAffectsAgents}</span>
+              </div>
+              <ul className="list-disc list-inside text-sm text-muted-foreground">
+                {deleteAffectedAgents.map(agent => (
+                  <li key={agent.id}>{agent.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
             <AlertDialogAction
@@ -569,8 +591,9 @@ export function Skills() {
 }
 
 /** Marketplace card */
-function MarketplaceCard({ skill, onChanged }: { skill: MarketplaceSkill; onChanged: () => void }) {
+function MarketplaceCard({ skill: initialSkill, onChanged }: { skill: MarketplaceSkill; onChanged: () => void }) {
   const { t } = useI18n()
+  const [skill, setSkill] = useState(initialSkill)
   const [status, setStatus] = useState<'idle' | 'installing' | 'updating' | 'uninstalling' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -581,6 +604,7 @@ function MarketplaceCard({ skill, onChanged }: { skill: MarketplaceSkill; onChan
       const result = await installRecommendedSkill(skill.slug)
       if (result.ok) {
         setStatus('idle')
+        setSkill(s => ({ ...s, installed: true, hasUpdate: false }))
         onChanged()
       } else {
         setStatus('error')
@@ -599,6 +623,7 @@ function MarketplaceCard({ skill, onChanged }: { skill: MarketplaceSkill; onChan
       const result = await updateMarketplaceSkill(skill.slug)
       if (result.ok) {
         setStatus('idle')
+        setSkill(s => ({ ...s, hasUpdate: false, installedVersion: s.latestVersion ?? s.installedVersion }))
         onChanged()
       } else {
         setStatus('error')
@@ -617,6 +642,7 @@ function MarketplaceCard({ skill, onChanged }: { skill: MarketplaceSkill; onChan
       const result = await uninstallRecommendedSkill(skill.slug)
       if (result.ok) {
         setStatus('idle')
+        setSkill(s => ({ ...s, installed: false, hasUpdate: false, installedVersion: undefined }))
         onChanged()
       } else {
         setStatus('error')
