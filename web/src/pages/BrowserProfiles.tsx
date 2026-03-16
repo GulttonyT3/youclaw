@@ -9,6 +9,7 @@ import type { BrowserProfileDTO } from '../api/client'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { Globe, Plus, Trash2, Play, FolderOpen } from 'lucide-react'
 
 export function BrowserProfiles() {
@@ -16,6 +17,7 @@ export function BrowserProfiles() {
   const [profiles, setProfiles] = useState<BrowserProfileDTO[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const selectedProfile = profiles.find((p) => p.id === selectedId) ?? null
 
@@ -28,7 +30,6 @@ export function BrowserProfiles() {
   }, [loadProfiles])
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t.browser.confirmDelete)) return
     await deleteBrowserProfile(id).catch(() => {})
     if (selectedId === id) setSelectedId(null)
     loadProfiles()
@@ -123,7 +124,7 @@ export function BrowserProfiles() {
           <ProfileDetail
             profile={selectedProfile}
             onLaunch={() => handleLaunch(selectedProfile.id)}
-            onDelete={() => handleDelete(selectedProfile.id)}
+            onDelete={() => setDeleteId(selectedProfile.id)}
             isLaunching={launchingId === selectedProfile.id}
             launchMessage={selectedId === selectedProfile.id ? launchMessage : null}
           />
@@ -136,6 +137,24 @@ export function BrowserProfiles() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.browser.confirmDelete}</AlertDialogTitle>
+            <AlertDialogDescription>{''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteId) handleDelete(deleteId); setDeleteId(null) }}
+            >
+              {t.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

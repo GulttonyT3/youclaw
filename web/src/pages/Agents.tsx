@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
 
@@ -60,6 +61,7 @@ export function Agents() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('detail')
+  const [deleteAgentId, setDeleteAgentId] = useState<string | null>(null)
 
   // Document-related state
   const [docs, setDocs] = useState<Record<string, string>>({})
@@ -176,7 +178,6 @@ export function Agents() {
   // Delete Agent
   const handleDelete = async (agentId: string) => {
     if (agentId === 'default') return
-    if (!confirm(t.agents.confirmDelete)) return
     try {
       await deleteAgent(agentId)
       loadAgents()
@@ -280,7 +281,7 @@ export function Agents() {
             onSaveDoc={handleSaveDoc}
             setEditContent={setEditContent}
             onStartChat={() => navigate('/')}
-            onDelete={() => handleDelete(selectedAgent.id)}
+            onDelete={() => setDeleteAgentId(selectedAgent.id)}
             subAgents={subAgents}
             onSaveSubAgents={handleSaveSubAgents}
             browserProfiles={browserProfiles}
@@ -297,6 +298,24 @@ export function Agents() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!deleteAgentId} onOpenChange={(open) => !open && setDeleteAgentId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.agents.confirmDelete}</AlertDialogTitle>
+            <AlertDialogDescription>{''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteAgentId) handleDelete(deleteAgentId); setDeleteAgentId(null) }}
+            >
+              {t.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -720,6 +739,7 @@ function SubAgentsSection({
   const [editDraft, setEditDraft] = useState<SubAgentDef>({ description: '' })
   const [newId, setNewId] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [deleteSubId, setDeleteSubId] = useState<string | null>(null)
 
   const entries = Object.entries(subAgents)
 
@@ -761,8 +781,7 @@ function SubAgentsSection({
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(t.agents.confirmDeleteSub)) return
+  const handleDeleteSub = async (id: string) => {
     const updated = Object.fromEntries(entries.filter(([k]) => k !== id))
     setIsSaving(true)
     try {
@@ -852,7 +871,7 @@ function SubAgentsSection({
                         </button>
                         <button
                           data-testid="subagent-delete-btn"
-                          onClick={() => handleDelete(id)}
+                          onClick={() => setDeleteSubId(id)}
                           className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-destructive hover:bg-destructive/10 transition-colors"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -921,6 +940,24 @@ function SubAgentsSection({
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!deleteSubId} onOpenChange={(open) => !open && setDeleteSubId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.agents.confirmDeleteSub}</AlertDialogTitle>
+            <AlertDialogDescription>{''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteSubId) handleDeleteSub(deleteSubId); setDeleteSubId(null) }}
+            >
+              {t.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

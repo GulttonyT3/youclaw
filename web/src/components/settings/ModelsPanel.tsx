@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { useI18n } from "@/i18n"
 import { cn } from "@/lib/utils"
@@ -37,6 +38,8 @@ export function ModelsPanel() {
   const [formModelId, setFormModelId] = useState("")
   const [formApiKey, setFormApiKey] = useState("")
   const [formBaseUrl, setFormBaseUrl] = useState("")
+  // Delete confirmation
+  const [deleteModelId, setDeleteModelId] = useState<string | null>(null)
   // Form validation errors (shown only after field is touched)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
@@ -183,7 +186,6 @@ export function ModelsPanel() {
 
   // Delete custom model
   const handleDeleteModel = async (id: string) => {
-    if (!confirm(t.settings.confirmDeleteModel)) return
     const updated = customModels.filter((m) => m.id !== id)
     setCustomModels(updated)
 
@@ -399,7 +401,7 @@ export function ModelsPanel() {
                     variant="ghost"
                     size="sm"
                     className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteModel(model.id)}
+                    onClick={() => setDeleteModelId(model.id)}
                   >
                     <Trash2 size={13} />
                   </Button>
@@ -481,6 +483,30 @@ export function ModelsPanel() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteModelId} onOpenChange={(open) => !open && setDeleteModelId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.settings.confirmDeleteModel}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t.settings.deleteModelDesc ?? ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteModelId) handleDeleteModel(deleteModelId)
+                setDeleteModelId(null)
+              }}
+            >
+              {t.common.delete ?? t.common.confirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

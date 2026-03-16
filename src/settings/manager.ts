@@ -58,7 +58,7 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
       return {
         apiKey: builtinToken,
         baseUrl: builtinUrl,
-        modelId: 'claude-sonnet-4-6',
+        modelId: env.AGENT_MODEL,
         provider: 'builtin',
       }
     }
@@ -97,7 +97,7 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
 export function getBuiltinModelId(): string | null {
   const env = getEnv()
   if (env.YOUCLAW_BUILTIN_API_URL && env.YOUCLAW_BUILTIN_AUTH_TOKEN) {
-    return 'claude-sonnet-4-6'
+    return env.AGENT_MODEL
   }
   if (env.ANTHROPIC_API_KEY) {
     return env.AGENT_MODEL

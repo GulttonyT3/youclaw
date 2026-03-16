@@ -14,6 +14,7 @@ import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import {
   Clock,
   Plus,
@@ -108,6 +109,7 @@ export function Tasks() {
   const [logs, setLogs] = useState<TaskRunLogDTO[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [panelMode, setPanelMode] = useState<PanelMode>('view')
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null
 
@@ -151,7 +153,6 @@ export function Tasks() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t.tasks.confirmDelete)) return
     await deleteScheduledTask(id).catch(() => {})
     if (selectedId === id) {
       setSelectedId(null)
@@ -272,7 +273,7 @@ export function Tasks() {
             onClone={() => handleClone(selectedTask.id)}
             onTogglePause={() => handleTogglePause(selectedTask)}
             onRun={() => handleRun(selectedTask.id)}
-            onDelete={() => handleDelete(selectedTask.id)}
+            onDelete={() => setDeleteId(selectedTask.id)}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -283,6 +284,24 @@ export function Tasks() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.tasks.confirmDelete}</AlertDialogTitle>
+            <AlertDialogDescription>{''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteId) handleDelete(deleteId); setDeleteId(null) }}
+            >
+              {t.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
