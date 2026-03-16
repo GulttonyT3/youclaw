@@ -13,6 +13,7 @@ import type { ScheduledTaskDTO, TaskRunLogDTO } from '../api/client'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Clock,
   Plus,
@@ -549,19 +550,22 @@ function TaskForm({
         {/* Agent (only selectable when creating) */}
         <div>
           <label className="block text-xs text-muted-foreground mb-1">{t.tasks.agent}</label>
-          <select
-            data-testid="task-select-agent"
+          <Select
             value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
+            onValueChange={setAgentId}
             disabled={isEdit}
-            className="w-full px-3 py-2 text-sm rounded-md bg-accent/30 border border-border focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.id})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger data-testid="task-select-agent" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name} ({a.id})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Prompt */}

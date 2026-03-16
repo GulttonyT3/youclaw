@@ -12,6 +12,7 @@ import type { ChannelInstance, ChannelTypeInfo } from '../api/client'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export function Channels() {
   const { t } = useI18n()
@@ -207,17 +208,17 @@ function CreateChannelForm({
       {/* Select type */}
       <div>
         <label className="text-xs font-medium mb-1.5 block">{t.channels.channelType}</label>
-        <select
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value)}
-          className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          data-testid="channel-select-type"
-        >
-          <option value="">{t.channels.selectType}</option>
-          {types.map((ct) => (
-            <option key={ct.type} value={ct.type}>{ct.label} - {ct.description}</option>
-          ))}
-        </select>
+        <Select value={selectedType || '__none__'} onValueChange={(v) => setSelectedType(v === '__none__' ? '' : v)}>
+          <SelectTrigger data-testid="channel-select-type" className="w-full">
+            <SelectValue placeholder={t.channels.selectType} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t.channels.selectType}</SelectItem>
+            {types.map((ct) => (
+              <SelectItem key={ct.type} value={ct.type}>{ct.label} - {ct.description}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {typeInfo && (

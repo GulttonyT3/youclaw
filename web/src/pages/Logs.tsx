@@ -4,6 +4,7 @@ import { getLogDates, getLogEntries } from '../api/client'
 import type { LogEntry } from '../api/client'
 import { cn } from '../lib/utils'
 import { useI18n } from '../i18n'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const LEVEL_LABELS: Record<number, string> = {
   10: 'TRACE', 20: 'DEBUG', 30: 'INFO', 40: 'WARN', 50: 'ERROR', 60: 'FATAL',
@@ -123,17 +124,17 @@ export function Logs() {
         <h1 className="text-lg font-semibold">{t.logs.title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {/* Date selector */}
-          <select
-            data-testid="logs-select-date"
-            className="h-8 px-2 text-sm rounded-md border border-border bg-background"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          >
-            {dates.length === 0 && <option value="">{t.logs.selectDate}</option>}
-            {dates.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <Select value={selectedDate} onValueChange={setSelectedDate}>
+            <SelectTrigger data-testid="logs-select-date" className="h-8 w-auto min-w-[140px]">
+              <SelectValue placeholder={t.logs.selectDate} />
+            </SelectTrigger>
+            <SelectContent>
+              {dates.length === 0 && <SelectItem value="__none__">{t.logs.selectDate}</SelectItem>}
+              {dates.map((d) => (
+                <SelectItem key={d} value={d}>{d}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {/* Category button group */}
           <div className="flex rounded-md border border-border overflow-hidden">
@@ -155,16 +156,16 @@ export function Logs() {
           </div>
 
           {/* Level dropdown */}
-          <select
-            data-testid="logs-select-level"
-            className="h-8 px-2 text-sm rounded-md border border-border bg-background"
-            value={level}
-            onChange={(e) => setLevel(e.target.value)}
-          >
-            {levels.map((l) => (
-              <option key={l.value} value={l.value}>{l.label}</option>
-            ))}
-          </select>
+          <Select value={level || '__all__'} onValueChange={(v) => setLevel(v === '__all__' ? '' : v)}>
+            <SelectTrigger data-testid="logs-select-level" className="h-8 w-auto min-w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {levels.map((l) => (
+                <SelectItem key={l.value || '__all__'} value={l.value || '__all__'}>{l.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {/* Search box */}
           <div className="relative flex-1 min-w-[200px]">

@@ -8,6 +8,7 @@ import {
   Activity, Clock, AlertCircle, Layers, Globe,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
 
@@ -531,17 +532,20 @@ function AgentDetail({
             {t.agents.browserProfile}
           </h2>
           <div className="flex items-center gap-3">
-            <select
-              data-testid="agent-browser-profile-select"
-              value={agentBrowserProfile ?? ''}
-              onChange={(e) => onSaveBrowserProfile(e.target.value || undefined)}
-              className="px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            <Select
+              value={agentBrowserProfile ?? '__none__'}
+              onValueChange={(v) => onSaveBrowserProfile(v === '__none__' ? undefined : v)}
             >
-              <option value="">{t.agents.browserProfileNone}</option>
-              {browserProfiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-              ))}
-            </select>
+              <SelectTrigger data-testid="agent-browser-profile-select" className="w-[240px]">
+                <SelectValue placeholder={t.agents.browserProfileNone} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t.agents.browserProfileNone}</SelectItem>
+                {browserProfiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name} ({p.id})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <span className="text-xs text-muted-foreground">{t.agents.browserProfileHint}</span>
           </div>
         </div>
@@ -1025,16 +1029,20 @@ function SubAgentForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium mb-1">{t.agents.model}</label>
-          <select
+          <Select
             value={draft.model ?? 'inherit'}
-            onChange={(e) => setDraft({ ...draft, model: e.target.value === 'inherit' ? undefined : e.target.value })}
-            className={inputClass}
+            onValueChange={(v) => setDraft({ ...draft, model: v === 'inherit' ? undefined : v })}
           >
-            <option value="inherit">inherit</option>
-            <option value="sonnet">sonnet</option>
-            <option value="opus">opus</option>
-            <option value="haiku">haiku</option>
-          </select>
+            <SelectTrigger className={inputClass}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inherit">inherit</SelectItem>
+              <SelectItem value="sonnet">sonnet</SelectItem>
+              <SelectItem value="opus">opus</SelectItem>
+              <SelectItem value="haiku">haiku</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label className="block text-xs font-medium mb-1">{t.agents.maxTurnsLabel}</label>
