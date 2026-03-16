@@ -313,6 +313,12 @@ export const zh: Translations = {
     saving: '保存中...',
     saveSuccess: '保存成功',
     saveFailed: '保存失败',
+    invitationCode: '邀请码',
+    invitationCodePlaceholder: '请输入邀请码',
+    redeem: '兑换',
+    redeemSuccess: '兑换成功',
+    redeemFailed: '兑换失败',
+    redeeming: '兑换中...',
   },
   insufficientCredits: {
     title: '积分不足',

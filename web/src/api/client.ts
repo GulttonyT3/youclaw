@@ -429,6 +429,13 @@ export async function updateProfile(params: { displayName?: string; avatar?: str
   })
 }
 
+export async function redeemInvitationCode(code: string) {
+  return apiFetch<{ ok: boolean }>('/api/invitation/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
 // ===== Credit API =====
 
 export interface CreditBalance {
@@ -436,11 +443,17 @@ export interface CreditBalance {
 }
 
 export interface CreditTransaction {
-  id: string
+  id: number
+  userId: number
   amount: number
+  balanceAfter: number
   type: string
   description: string
-  created_at: string
+  modelName: string | null
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  createdAt: number
 }
 
 export async function getCreditBalance() {
@@ -452,7 +465,7 @@ export async function getCreditTransactions(params?: { page?: number; limit?: nu
   if (params?.page) qs.set('page', String(params.page))
   if (params?.limit) qs.set('limit', String(params.limit))
   const q = qs.toString()
-  return apiFetch<{ items: CreditTransaction[]; total: number }>(`/api/credit/transactions${q ? `?${q}` : ''}`)
+  return apiFetch<CreditTransaction[]>(`/api/credit/transactions${q ? `?${q}` : ''}`)
 }
 
 // ===== Port Config API (Web mode) =====

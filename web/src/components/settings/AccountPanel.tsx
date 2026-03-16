@@ -11,10 +11,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { useI18n } from "@/i18n"
 import { useAppStore } from "@/stores/app"
-import { getCreditTransactions, uploadFile, type CreditTransaction } from "@/api/client"
-import { LogIn, LogOut, Coins, ExternalLink, ChevronRight, Pencil, Camera, Check, X, Loader2, Sparkles } from "lucide-react"
+import { getCreditTransactions, uploadFile, redeemInvitationCode, type CreditTransaction } from "@/api/client"
+import { LogIn, LogOut, Coins, ExternalLink, ChevronRight, Pencil, Camera, Check, X, Loader2, Sparkles, Gift } from "lucide-react"
 
 export function AccountPanel() {
   const { t } = useI18n()
@@ -32,6 +39,12 @@ export function AccountPanel() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Invitation code state
+  const [redeemOpen, setRedeemOpen] = useState(false)
+  const [invitationCode, setInvitationCode] = useState("")
+  const [redeemingCode, setRedeemingCode] = useState(false)
+  const [redeemResult, setRedeemResult] = useState<{ success: boolean; message: string } | null>(null)
+
   useEffect(() => {
     if (isLoggedIn) {
       fetchCreditBalance()
@@ -43,7 +56,7 @@ export function AccountPanel() {
     setLoadingTx(true)
     try {
       const data = await getCreditTransactions({ limit: 20 })
-      setTransactions(data.items ?? [])
+      setTransactions(Array.isArray(data) ? data : [])
     } catch {
       setTransactions([])
     }
@@ -78,6 +91,22 @@ export function AccountPanel() {
 
   const handleCancelEditName = () => {
     setEditingName(false)
+  }
+
+  const handleRedeem = async () => {
+    if (!invitationCode.trim()) return
+    setRedeemingCode(true)
+    setRedeemResult(null)
+    try {
+      await redeemInvitationCode(invitationCode.trim())
+      setRedeemResult({ success: true, message: t.account.redeemSuccess })
+      setInvitationCode("")
+      // 刷新积分余额
+      fetchCreditBalance()
+    } catch (err: any) {
+      setRedeemResult({ success: false, message: err?.message || t.account.redeemFailed })
+    }
+    setRedeemingCode(false)
   }
 
   const handleAvatarClick = () => {
@@ -215,10 +244,16 @@ export function AccountPanel() {
               {creditBalance != null ? creditBalance.toLocaleString() : '--'}
             </div>
           </div>
-          <Button onClick={handleTopUp} className="gap-1.5 rounded-xl">
-            <ExternalLink size={14} />
-            {t.account.topUp}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => { setRedeemResult(null); setInvitationCode(""); setRedeemOpen(true) }} className="gap-1.5 rounded-xl">
+              <Gift size={14} />
+              {t.account.invitationCode}
+            </Button>
+            <Button onClick={handleTopUp} className="gap-1.5 rounded-xl">
+              <ExternalLink size={14} />
+              {t.account.topUp}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -244,7 +279,7 @@ export function AccountPanel() {
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{tx.description || tx.type}</div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(tx.created_at).toLocaleString()}
+                      {new Date(tx.createdAt).toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -259,6 +294,46 @@ export function AccountPanel() {
           </div>
         )}
       </div>
+
+      {/* Invitation code dialog */}
+      <Dialog open={redeemOpen} onOpenChange={setRedeemOpen}>
+        <DialogContent className="sm:max-w-sm p-8">
+          <div className="flex flex-col items-center text-center space-y-5">
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Gift size={24} className="text-primary" />
+            </div>
+            <DialogHeader className="space-y-1.5 items-center">
+              <DialogTitle>{t.account.invitationCode}</DialogTitle>
+              <DialogDescription>{t.account.invitationCodePlaceholder}</DialogDescription>
+            </DialogHeader>
+            <Input
+              value={invitationCode}
+              onChange={(e) => {
+                setInvitationCode(e.target.value)
+                setRedeemResult(null)
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleRedeem() }}
+              placeholder={t.account.invitationCodePlaceholder}
+              className="text-center tracking-widest text-base h-11"
+              disabled={redeemingCode}
+              autoFocus
+            />
+            {redeemResult && (
+              <div className={`text-sm w-full px-3 py-2.5 rounded-xl ${redeemResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'}`}>
+                {redeemResult.message}
+              </div>
+            )}
+            <Button
+              onClick={handleRedeem}
+              disabled={redeemingCode || !invitationCode.trim()}
+              className="w-full gap-2 rounded-xl h-11"
+            >
+              {redeemingCode ? <Loader2 size={16} className="animate-spin" /> : <Gift size={16} />}
+              {redeemingCode ? t.account.redeeming : t.account.redeem}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Logout confirmation dialog */}
       <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>

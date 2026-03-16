@@ -311,6 +311,12 @@ export const en = {
     saving: 'Saving...',
     saveSuccess: 'Saved',
     saveFailed: 'Save failed',
+    invitationCode: 'Invitation Code',
+    invitationCodePlaceholder: 'Enter invitation code',
+    redeem: 'Redeem',
+    redeemSuccess: 'Redeemed successfully',
+    redeemFailed: 'Redemption failed',
+    redeeming: 'Redeeming...',
   },
   insufficientCredits: {
     title: 'Insufficient Credits',
