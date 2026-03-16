@@ -18,7 +18,7 @@ export class PromptBuilder {
 
   /**
    * Build the complete system prompt
-   * Loading order: SOUL.md -> USER.md -> AGENT.md -> TOOLS.md -> Skills -> Memory -> Env
+   * Loading order: SOUL.md -> USER.md -> AGENT.md -> TOOLS.md -> Memory -> Env
    */
   build(
     workspaceDir: string,
@@ -51,12 +51,6 @@ export class PromptBuilder {
       if (fallback) {
         parts.push(fallback)
       }
-    }
-
-    // Inject skills
-    const skillsPrompt = this.buildSkillsPrompt(config, context?.requestedSkills)
-    if (skillsPrompt) {
-      parts.push(skillsPrompt)
     }
 
     // Inject browser profile context
@@ -161,34 +155,4 @@ export class PromptBuilder {
     return `## Browser Profile\n\nWhen using agent-browser, ALWAYS include \`--profile ${profileDir}\` to use the persistent browser profile "${profile.name}". Example:\n\n\`\`\`bash\nagent-browser --profile ${profileDir} open https://example.com\n\`\`\``
   }
 
-  /**
-   * Build skills prompt fragment
-   */
-  private buildSkillsPrompt(config: AgentConfig, requestedSkills?: string[]): string | null {
-    if (!this.skillsLoader) return null
-
-    const skills = this.skillsLoader.loadSkillsForAgent(config)
-    const eligibleSkills = skills.filter((s) => s.eligible)
-
-    if (eligibleSkills.length === 0) return null
-
-    // If user explicitly requested skills, inject only matched ones; otherwise fall back to all eligible
-    let skillsToInject = eligibleSkills
-    if (requestedSkills && requestedSkills.length > 0) {
-      const requested = new Set(requestedSkills)
-      const matched = eligibleSkills.filter((s) => requested.has(s.name))
-      if (matched.length > 0) {
-        skillsToInject = matched
-      }
-    }
-
-    const limited = this.skillsLoader.applyPromptLimits(skillsToInject)
-
-    let prompt = '## Skills\n'
-    for (const skill of limited) {
-      prompt += `\n### ${skill.name}\n${skill.content}\n`
-    }
-
-    return prompt
-  }
 }
