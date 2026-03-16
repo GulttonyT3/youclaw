@@ -256,7 +256,8 @@ export function createSkillsRoutes(skillsLoader: SkillsLoader, agentManager: Age
         }
       }
       if (modified) {
-        agentManager.reloadAgents()
+        // Reload agents (also syncs .claude/skills/ via AgentManager.loadAgents)
+        await agentManager.reloadAgents()
       }
 
       return c.json({ ok: true })
