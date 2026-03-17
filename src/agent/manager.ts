@@ -8,7 +8,6 @@ import type { EventBus } from '../events/index.ts'
 import { AgentConfigSchema } from './schema.ts'
 import { AgentRuntime } from './runtime.ts'
 import { PromptBuilder } from './prompt-builder.ts'
-import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import type { AgentRouter } from './router.ts'
 import type { SecretsManager } from './secrets.ts'
@@ -23,7 +22,6 @@ export class AgentManager {
   private agents: Map<string, AgentInstance> = new Map()
   private eventBus: EventBus
   private promptBuilder: PromptBuilder
-  private compiler: AgentCompiler | null
   private hooksManager: HooksManager | null
   private agentRouter: AgentRouter | null
   private secretsManager: SecretsManager | null
@@ -32,7 +30,6 @@ export class AgentManager {
   constructor(
     eventBus: EventBus,
     promptBuilder: PromptBuilder,
-    compiler?: AgentCompiler,
     hooksManager?: HooksManager,
     agentRouter?: AgentRouter,
     secretsManager?: SecretsManager,
@@ -40,7 +37,6 @@ export class AgentManager {
   ) {
     this.eventBus = eventBus
     this.promptBuilder = promptBuilder
-    this.compiler = compiler ?? null
     this.hooksManager = hooksManager ?? null
     this.agentRouter = agentRouter ?? null
     this.secretsManager = secretsManager ?? null
@@ -195,8 +191,8 @@ export class AgentManager {
           config,
           this.eventBus,
           this.promptBuilder,
-          this.compiler ?? undefined,
           this.hooksManager ?? undefined,
+          this.skillsLoader ?? undefined,
         )
 
         this.agents.set(config.id, {

@@ -84,39 +84,9 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 }
             }
 
-            // Auto-detect Git for Windows (needed for claude-agent-sdk shell commands)
-            // Priority 1: Bundled MinGit in resources directory
+            // Auto-detect Git for Windows (needed for bash tool)
             let mut git_bash_found = false;
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                let mut res_str = resource_dir.to_string_lossy().to_string();
-                if res_str.starts_with("\\\\?\\") {
-                    res_str = res_str[4..].to_string();
-                }
-                let mingit_candidates = [
-                    format!("{}\\mingit", res_str),
-                ];
-                for mingit_dir in &mingit_candidates {
-                    let bash_path = format!("{}\\usr\\bin\\bash.exe", mingit_dir);
-                    if std::path::Path::new(&bash_path).exists() {
-                        log::info!("Bundled MinGit found at: {}", mingit_dir);
-                        env_vars.push(("CLAUDE_CODE_GIT_BASH_PATH".into(), bash_path));
-                        // Add MinGit directories to PATH
-                        let cmd_dir = format!("{}\\cmd", mingit_dir);
-                        let usr_bin_dir = format!("{}\\usr\\bin", mingit_dir);
-                        let mingw64_bin_dir = format!("{}\\mingw64\\bin", mingit_dir);
-                        for dir in [&cmd_dir, &usr_bin_dir, &mingw64_bin_dir] {
-                            if std::path::Path::new(dir).exists() && !extra_paths.contains(dir) {
-                                extra_paths.push(dir.clone());
-                            }
-                        }
-                        git_bash_found = true;
-                        break;
-                    }
-                }
-            }
-
-            // Priority 2: System Git installation
-            if !git_bash_found {
+            {
                 let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
                 let program_files = std::env::var("ProgramFiles")
                     .unwrap_or_else(|_| "C:\\Program Files".into());
@@ -153,7 +123,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 }
             }
             if !git_bash_found {
-                log::warn!("Git Bash not found (neither bundled MinGit nor system Git) — claude-agent-sdk shell commands may fail on Windows");
+                log::warn!("Git Bash not found — bash tool may not work on Windows");
             }
         } else {
             // Resolve nvm's actual node bin path (nvm does not create ~/.nvm/current)
