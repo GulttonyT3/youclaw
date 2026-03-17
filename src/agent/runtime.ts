@@ -414,25 +414,30 @@ function ensureWindowsGitBash(): string | null {
     _windowsMinGitDownloadTried = true
     const mingitZipPath = resolve(dataDir, 'mingit.zip')
     const version = '2.49.0'
-    const url = `https://github.com/git-for-windows/git/releases/download/v${version}.windows.1/MinGit-${version}-64-bit.zip`
-    const escapedUrl = url.replaceAll("'", "''")
     const escapedZipPath = mingitZipPath.replaceAll("'", "''")
-    try {
-      safeLog('info', 'Downloading MinGit fallback for Windows', { url, mingitZipPath })
-      execSync(
-        `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri '${escapedUrl}' -OutFile '${escapedZipPath}'"`,
-        { timeout: 180_000, stdio: 'pipe' },
-      )
-      const bashPath = resolve(mingitDir, 'usr', 'bin', 'bash.exe')
-      if (extractZipOnWindows(mingitZipPath, mingitDir) && existsSync(bashPath)) {
-        setWindowsGitBashPath(bashPath, 'downloaded-mingit')
-        return bashPath
+    const urls = [
+      `https://cdn.chat2db-ai.com/youclaw/website/MinGit-${version}-64-bit.zip`,
+      `https://github.com/git-for-windows/git/releases/download/v${version}.windows.1/MinGit-${version}-64-bit.zip`,
+    ]
+    for (const url of urls) {
+      const escapedUrl = url.replaceAll("'", "''")
+      try {
+        safeLog('info', 'Downloading MinGit fallback for Windows', { url, mingitZipPath })
+        execSync(
+          `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri '${escapedUrl}' -OutFile '${escapedZipPath}'"`,
+          { timeout: 180_000, stdio: 'pipe' },
+        )
+        const bashPath = resolve(mingitDir, 'usr', 'bin', 'bash.exe')
+        if (extractZipOnWindows(mingitZipPath, mingitDir) && existsSync(bashPath)) {
+          setWindowsGitBashPath(bashPath, 'downloaded-mingit')
+          return bashPath
+        }
+      } catch (err) {
+        safeLog('warn', 'Failed to download MinGit fallback on Windows', {
+          url,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
-    } catch (err) {
-      safeLog('warn', 'Failed to download MinGit fallback on Windows', {
-        url,
-        error: err instanceof Error ? err.message : String(err),
-      })
     }
   }
 
@@ -1227,7 +1232,7 @@ export class AgentRuntime {
     }
     if (/requires git-bash|git.?bash|CLAUDE_CODE_GIT_BASH_PATH|bash\.exe/i.test(raw)) {
       return {
-        message: 'Windows is missing Git Bash required by Claude SDK. Install Git for Windows (https://git-scm.com/downloads/win), or set CLAUDE_CODE_GIT_BASH_PATH to bash.exe.',
+        message: 'Windows is missing Git Bash required by Claude SDK. Please install Git from https://cdn.chat2db-ai.com/youclaw/website/Git-2.53.0.2-64-bit.exe (supports Chinese setup UI), or set CLAUDE_CODE_GIT_BASH_PATH to bash.exe.',
         errorCode: ErrorCode.MODEL_CONNECTION_FAILED,
       }
     }
