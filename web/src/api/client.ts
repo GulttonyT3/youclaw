@@ -301,13 +301,6 @@ export interface MarketplacePage {
   sort: MarketplaceSort
 }
 
-// Backwards compatibility alias
-export type RecommendedSkill = MarketplaceSkill
-
-export async function getRecommendedSkills() {
-  return apiFetch<MarketplaceSkill[]>('/api/registry/recommended')
-}
-
 export async function getMarketplaceSkills(params: {
   query?: string
   cursor?: string | null
@@ -321,6 +314,10 @@ export async function getMarketplaceSkills(params: {
   if (params.sort) search.set('sort', params.sort)
   const suffix = search.toString() ? `?${search}` : ''
   return apiFetch<MarketplacePage>(`/api/registry/marketplace${suffix}`)
+}
+
+export async function getRecommendedSkills() {
+  return apiFetch<MarketplaceSkill[]>('/api/registry/recommended')
 }
 
 export async function getMarketplaceSkill(slug: string) {

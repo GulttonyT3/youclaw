@@ -7,9 +7,8 @@ import {
   toggleSkill,
   deleteSkill,
   getMarketplaceSkills,
-  getRecommendedSkills,
 } from '../api/client'
-import type { Skill, MarketplacePage, MarketplaceSort, RecommendedSkill } from '../api/client'
+import type { Skill, MarketplacePage, MarketplaceSort } from '../api/client'
 import {
   Puzzle,
   CheckCircle,
@@ -89,8 +88,6 @@ export function Skills() {
 
   // Unified search state
   const [searchQuery, setSearchQuery] = useState('')
-  const [recommended, setRecommended] = useState<RecommendedSkill[]>([])
-  const [recommendedLoading, setRecommendedLoading] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sourceLabels: Record<Skill['source'], string> = {
@@ -135,23 +132,10 @@ export function Skills() {
     [marketplace.nextCursor, searchQuery, marketplaceSort, t.skills.marketplaceLoadFailed],
   )
 
-  // Load recommended list (no search query)
-  const loadRecommended = useCallback(() => {
-    setRecommendedLoading(true)
-    getRecommendedSkills()
-      .then(setRecommended)
-      .catch(() => setRecommended([]))
-      .finally(() => setRecommendedLoading(false))
-  }, [])
-
   useEffect(() => { loadSkills() }, [loadSkills])
   useEffect(() => {
     if (tab === 'marketplace') {
-      if (searchQuery.trim()) {
-        loadMarketplace({ query: searchQuery })
-      } else {
-        loadRecommended()
-      }
+      loadMarketplace({ query: searchQuery })
     }
   }, [tab, searchQuery, marketplaceSort]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -177,8 +161,8 @@ export function Skills() {
     .filter(g => g.skills.length > 0)
 
   const isSearching = searchQuery.trim().length > 0
-  const hasMarketplaceItems = isSearching ? marketplace.items.length > 0 : recommended.length > 0
-  const canLoadMore = isSearching && Boolean(marketplace.nextCursor)
+  const hasMarketplaceItems = marketplace.items.length > 0
+  const canLoadMore = Boolean(marketplace.nextCursor)
 
   return (
     <div className="flex h-full flex-col">
@@ -449,7 +433,7 @@ export function Skills() {
                   className="pl-9"
                 />
               </div>
-              {isSearching && (
+              {(
                 <>
                   <select
                     data-testid="marketplace-sort-select"
@@ -476,12 +460,12 @@ export function Skills() {
             {!isSearching && (
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-medium">{t.skills.recommended}</h3>
+                <h3 className="text-sm font-medium">{t.skills.marketplaceBrowseSummary}</h3>
               </div>
             )}
 
             {/* Loading state */}
-            {(recommendedLoading || marketplaceStatus === 'loading') && (
+            {marketplaceStatus === 'loading' && (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
@@ -496,27 +480,15 @@ export function Skills() {
             )}
 
             {/* Empty state */}
-            {!recommendedLoading && marketplaceStatus !== 'loading' && marketplaceStatus !== 'error' && !hasMarketplaceItems && (
+            {marketplaceStatus !== 'loading' && marketplaceStatus !== 'error' && !hasMarketplaceItems && (
               <div className="text-center text-muted-foreground text-sm py-12">
                 <Store className="h-12 w-12 mx-auto mb-4 opacity-20" />
                 <p>{isSearching ? t.skills.noMarketplaceSkills : t.skills.noSkills}</p>
               </div>
             )}
 
-            {/* Results: recommended list or search results */}
-            {!isSearching && !recommendedLoading && recommended.length > 0 && (
-              <div className="grid gap-3">
-                {recommended.map(skill => (
-                  <MarketplaceCard
-                    key={skill.slug}
-                    skill={skill}
-                    onChanged={loadSkills}
-                  />
-                ))}
-              </div>
-            )}
-
-            {isSearching && marketplaceStatus !== 'loading' && marketplace.items.length > 0 && (
+            {/* Results */}
+            {marketplaceStatus !== 'loading' && marketplace.items.length > 0 && (
               <div className="grid gap-3">
                 {marketplace.items.map(skill => (
                   <MarketplaceCard
