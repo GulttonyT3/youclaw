@@ -668,6 +668,7 @@ export async function getLogEntries(date: string, params?: {
   search?: string
   offset?: number
   limit?: number
+  order?: 'asc' | 'desc'
 }) {
   const qs = new URLSearchParams()
   if (params?.level) qs.set('level', params.level)
@@ -675,6 +676,7 @@ export async function getLogEntries(date: string, params?: {
   if (params?.search) qs.set('search', params.search)
   if (params?.offset !== undefined) qs.set('offset', String(params.offset))
   if (params?.limit !== undefined) qs.set('limit', String(params.limit))
+  if (params?.order) qs.set('order', params.order)
   const q = qs.toString()
   return apiFetch<LogQueryResult>(`/api/logs/${date}${q ? `?${q}` : ''}`)
 }
