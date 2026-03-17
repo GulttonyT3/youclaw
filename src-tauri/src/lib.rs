@@ -118,11 +118,26 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         env_vars.push(("PATH".into(), path_parts.join(path_sep)));
     }
 
+    // Ensure HOME and USERPROFILE are available for subprocess (cli.js needs them)
+    if cfg!(target_os = "windows") {
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            env_vars.push(("USERPROFILE".into(), userprofile.clone()));
+            if std::env::var("HOME").is_err() {
+                env_vars.push(("HOME".into(), userprofile));
+            }
+        }
+    }
+
     // Set resource directory (read-only templates for agents/skills/prompts)
     match app.path().resource_dir() {
         Ok(resource_dir) => {
-            log::info!("Resource dir: {}", resource_dir.display());
-            env_vars.push(("RESOURCES_DIR".into(), resource_dir.to_string_lossy().to_string()));
+            let mut resource_str = resource_dir.to_string_lossy().to_string();
+            // Strip Windows extended-length path prefix (\\?\)
+            if resource_str.starts_with("\\\\?\\") {
+                resource_str = resource_str[4..].to_string();
+            }
+            log::info!("Resource dir: {}", resource_str);
+            env_vars.push(("RESOURCES_DIR".into(), resource_str));
         }
         Err(e) => {
             log::warn!("Failed to get resource_dir: {}, falling back to exe dir", e);
