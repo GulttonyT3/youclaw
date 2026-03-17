@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { spawn, execSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
@@ -11,6 +11,7 @@ import {
   deleteBrowserProfile,
 } from '../db/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { which } from '../utils/shell-env.ts'
 
 export function createBrowserProfilesRoutes() {
   const app = new Hono()
@@ -87,15 +88,6 @@ export function createBrowserProfilesRoutes() {
   })
 
   return app
-}
-
-/** Try to find a command on PATH using `which` */
-function which(cmd: string): string | null {
-  try {
-    return execSync(`which ${cmd}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim() || null
-  } catch {
-    return null
-  }
 }
 
 /**
