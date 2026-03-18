@@ -10,8 +10,8 @@ const BACKEND_PORT = process.env.PORT || '62601'
 export default defineConfig({
   base: './',
   build: {
-    // Tauri uses system WKWebView; macOS 11 ships Safari 14
-    target: ['es2021', 'safari14'],
+    // Tauri uses system WKWebView; macOS 10.15 ships Safari 13
+    target: ['es2020', 'safari13'],
   },
   plugins: [
     react(),
