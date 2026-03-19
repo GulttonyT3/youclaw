@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Message, ToolUseItem } from './useChat'
+import type { Message, TimelineItem, ToolUseItem } from './useChat'
 import type { ChatItem } from '../lib/chat-utils'
 import type { Attachment } from '../types/attachment'
 import type { BrowserProfileDTO } from '../api/client'
@@ -9,6 +9,7 @@ type Agent = { id: string; name: string }
 export interface ChatContextType {
   chatId: string | null
   messages: Message[]
+  timelineItems: TimelineItem[]
   streamingText: string
   isProcessing: boolean
   pendingToolUse: ToolUseItem[]

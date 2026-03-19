@@ -133,6 +133,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       value={{
         chatId: activeChatState?.chatId ?? null,
         messages: activeChatState?.messages ?? [],
+        timelineItems: activeChatState?.timelineItems ?? [],
         streamingText: activeChatState?.streamingText ?? "",
         isProcessing: activeChatState?.isProcessing ?? false,
         pendingToolUse: activeChatState?.pendingToolUse ?? [],

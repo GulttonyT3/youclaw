@@ -3,10 +3,10 @@ import { sendMessage, getMessages, abortChat } from '../api/client'
 import { useChatStore, onChatUpdate } from '../stores/chat'
 import { sseManager } from '../lib/sse-manager'
 import type { Attachment } from '../types/attachment'
-import type { ChatState, Message, ToolUseItem } from '../stores/chat'
+import type { ChatState, Message, TimelineItem, ToolUseItem } from '../stores/chat'
 
 // Re-export types for consumers (chatCtx.ts imports these)
-export type { Message, ToolUseItem }
+export type { Message, TimelineItem, ToolUseItem }
 
 /**
  * Read active chat's state. Returns null when no chat is active (new chat screen).
