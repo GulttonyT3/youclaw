@@ -1,9 +1,25 @@
-import { create } from "zustand"
-import { getItem, setItem } from "@/lib/storage"
-import { applyThemeToDOM, type Theme } from "@/hooks/useTheme"
-import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, updateProfile as apiUpdateProfile, getCloudStatus, getSettings, updateSettings, checkGit, type AuthUser } from "@/api/client"
-import { isTauri } from "@/api/transport"
-import type { Locale } from "@/i18n/context"
+import { create } from 'zustand'
+import { getItem, removeItem, setItem } from '@/lib/storage'
+import { applyThemeToDOM, type Theme } from '@/hooks/useTheme'
+import { getAuthUser, getAuthStatus, getAuthLoginUrl, authLogout, getCreditBalance, getPayUrl, updateProfile as apiUpdateProfile, getCloudStatus, getSettings, updateSettings, checkGit, type AuthUser } from '@/api/client'
+import { isTauri } from '@/api/transport'
+import type { Locale } from '@/i18n/context'
+
+export type CloseAction = '' | 'minimize' | 'quit'
+
+let authPollInterval: ReturnType<typeof setInterval> | null = null
+let authPollTimeout: ReturnType<typeof setTimeout> | null = null
+
+function clearAuthPolling() {
+  if (authPollInterval) {
+    clearInterval(authPollInterval)
+    authPollInterval = null
+  }
+  if (authPollTimeout) {
+    clearTimeout(authPollTimeout)
+    authPollTimeout = null
+  }
+}
 
 interface AppState {
   theme: Theme
@@ -11,6 +27,9 @@ interface AppState {
 
   locale: Locale
   setLocale: (locale: Locale) => void
+
+  closeAction: CloseAction
+  setCloseAction: (closeAction: CloseAction) => Promise<void>
 
   sidebarCollapsed: boolean
   toggleSidebar: () => void
@@ -46,32 +65,42 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  theme: "system",
+  theme: 'system',
   setTheme: (theme) => {
     set({ theme })
     applyThemeToDOM(theme)
-    setItem("theme", theme)
+    void setItem('theme', theme)
   },
 
-  locale: "en",
+  locale: 'en',
   setLocale: (locale) => {
     set({ locale })
-    setItem("locale", locale)
+    void setItem('locale', locale)
+  },
+
+  closeAction: '',
+  setCloseAction: async (closeAction) => {
+    set({ closeAction })
+    if (closeAction) {
+      await setItem('close_action', closeAction)
+      return
+    }
+    await removeItem('close_action')
   },
 
   sidebarCollapsed: false,
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed
     set({ sidebarCollapsed: next })
-    setItem("sidebar-collapsed", String(next))
+    void setItem('sidebar-collapsed', String(next))
   },
   collapseSidebar: () => {
     set({ sidebarCollapsed: true })
-    setItem("sidebar-collapsed", "true")
+    void setItem('sidebar-collapsed', 'true')
   },
   expandSidebar: () => {
     set({ sidebarCollapsed: false })
-    setItem("sidebar-collapsed", "false")
+    void setItem('sidebar-collapsed', 'false')
   },
 
   // Cloud
@@ -125,11 +154,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Helper: poll /auth/status until logged in
       const startPolling = () => {
-        const pollInterval = setInterval(async () => {
+        clearAuthPolling()
+        authPollInterval = setInterval(async () => {
           try {
             const { loggedIn } = await getAuthStatus()
             if (loggedIn) {
-              clearInterval(pollInterval)
+              clearAuthPolling()
               await get().fetchUser()
               await get().fetchCreditBalance()
               set({ authLoading: false })
@@ -139,11 +169,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }, 2000)
         // 120 second timeout
-        setTimeout(() => {
-          clearInterval(pollInterval)
+        authPollTimeout = setTimeout(() => {
+          clearAuthPolling()
           set({ authLoading: false })
         }, 120000)
-        return pollInterval
       }
 
       if (isTauri) {
@@ -167,12 +196,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   logout: async () => {
+    clearAuthPolling()
     try {
       await authLogout()
     } catch {
       // Always clear local UI state even if backend request fails
     }
-    set({ user: null, isLoggedIn: false, creditBalance: null })
+    set({ user: null, isLoggedIn: false, authLoading: false, creditBalance: null })
   },
 
   updateProfile: async (params) => {
@@ -224,16 +254,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hydrate: async () => {
-    const [theme, locale, sidebar] = await Promise.all([
-      getItem("theme"),
-      getItem("locale"),
-      getItem("sidebar-collapsed"),
+    const [theme, locale, closeAction, sidebar] = await Promise.all([
+      getItem('theme'),
+      getItem('locale'),
+      getItem('close_action'),
+      getItem('sidebar-collapsed'),
     ])
-    const resolvedTheme = (theme as Theme) ?? "system"
+    const resolvedTheme = (theme as Theme) ?? 'system'
     set({
       theme: resolvedTheme,
-      locale: (locale as Locale) ?? (navigator.language.startsWith("zh") ? "zh" : "en"),
-      sidebarCollapsed: sidebar === "true",
+      locale: (locale as Locale) ?? (navigator.language.startsWith('zh') ? 'zh' : 'en'),
+      closeAction: closeAction === 'minimize' || closeAction === 'quit' ? closeAction : '',
+      sidebarCollapsed: sidebar === 'true',
     })
     applyThemeToDOM(resolvedTheme)
 

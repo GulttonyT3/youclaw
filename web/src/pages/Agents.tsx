@@ -233,7 +233,7 @@ export function Agents() {
     <div className="flex h-full">
       {/* Left side: Agent list */}
       <SidePanel>
-        <div className="h-12 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
+        <div className="h-9 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
           <h2 className="font-semibold text-sm">{t.agents.title}</h2>
           <button
             data-testid="agent-create-btn"
