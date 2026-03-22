@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import QRCode from 'qrcode'
 import {
   Radio, CheckCircle, Save, Eye, EyeOff,
@@ -27,13 +28,13 @@ export function Channels() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
 
-  const fetchChannels = useCallback(() => {
-    getChannels()
-      .then((list) => {
-        setChannels(list)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+  const fetchChannels = useCallback(async () => {
+    try {
+      const list = await getChannels()
+      setChannels(list)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -130,9 +131,9 @@ export function Channels() {
           <CreateChannelForm
             t={t}
             types={channelTypes}
-            onCreated={() => {
+            onCreated={async () => {
               setShowCreate(false)
-              fetchChannels()
+              await fetchChannels()
             }}
             onCancel={() => setShowCreate(false)}
           />
@@ -142,9 +143,9 @@ export function Channels() {
             channel={selectedChannel}
             typeInfo={channelTypes.find((ct) => ct.type === selectedChannel.type)}
             onUpdated={fetchChannels}
-            onDeleted={() => {
+            onDeleted={async () => {
               setSelected(null)
-              fetchChannels()
+              await fetchChannels()
             }}
           />
         ) : (
@@ -169,7 +170,7 @@ function CreateChannelForm({
 }: {
   t: ReturnType<typeof useI18n>['t']
   types: ChannelTypeInfo[]
-  onCreated: () => void
+  onCreated: () => Promise<void>
   onCancel: () => void
 }) {
   const visibleTypes = types.filter((t) => !t.hidden)
@@ -198,7 +199,7 @@ function CreateChannelForm({
         label,
         config: configValues,
       })
-      onCreated()
+      await onCreated()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -303,8 +304,8 @@ function ChannelDetail({
   t: ReturnType<typeof useI18n>['t']
   channel: ChannelInstance
   typeInfo?: ChannelTypeInfo
-  onUpdated: () => void
-  onDeleted: () => void
+  onUpdated: () => Promise<void>
+  onDeleted: () => Promise<void>
 }) {
   const [actionLoading, setActionLoading] = useState('')
   const [actionError, setActionError] = useState('')
@@ -330,7 +331,7 @@ function ChannelDetail({
     setActionError('')
     try {
       await connectChannel(channel.id)
-      onUpdated()
+      await onUpdated()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -343,7 +344,7 @@ function ChannelDetail({
     setActionError('')
     try {
       await disconnectChannel(channel.id)
-      onUpdated()
+      await onUpdated()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -356,7 +357,7 @@ function ChannelDetail({
     setActionError('')
     try {
       await deleteChannel(channel.id)
-      onDeleted()
+      await onDeleted()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -377,7 +378,7 @@ function ChannelDetail({
     try {
       await updateChannel(channel.id, { label: trimmed })
       setEditingLabel(false)
-      onUpdated()
+      await onUpdated()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -390,7 +391,10 @@ function ChannelDetail({
     setActionError('')
     try {
       await updateChannel(channel.id, { enabled: !channel.enabled })
-      onUpdated()
+      flushSync(() => {
+        setActionLoading('')
+      })
+      await onUpdated().catch(() => {})
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -424,7 +428,7 @@ function ChannelDetail({
         if (waited.connected) {
           setQrImageUrl('')
           setActionLoading('')
-          onUpdated()
+          await onUpdated()
           return
         }
       }
@@ -445,7 +449,7 @@ function ChannelDetail({
       if (result.message) {
         setAuthMessage(result.message)
       }
-      onUpdated()
+      await onUpdated()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -540,10 +544,10 @@ function ChannelDetail({
             <PowerOff className="h-3.5 w-3.5" />
             {t.channels.disconnect}
           </button>
-        ) : !channel.supportsQrLogin || channel.loggedIn ? (
+        ) : channel.enabled && (!channel.supportsQrLogin || channel.loggedIn) ? (
           <button
             onClick={handleConnect}
-            disabled={!!actionLoading || !channel.enabled}
+            disabled={!!actionLoading}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500/10 transition-colors disabled:opacity-50"
             data-testid="channel-connect-btn"
           >
@@ -554,9 +558,19 @@ function ChannelDetail({
         <button
           onClick={handleToggleEnabled}
           disabled={!!actionLoading}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent/50 transition-colors disabled:opacity-50"
+          className={cn(
+            'flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border transition-colors disabled:opacity-50',
+            channel.enabled
+              ? 'border-border text-muted-foreground hover:bg-accent/50'
+              : 'border-green-500 bg-green-500 text-white shadow-[0_0_0_1px_rgba(34,197,94,0.2)] hover:bg-green-600 hover:border-green-600',
+          )}
           data-testid="channel-toggle-btn"
         >
+          {channel.enabled ? (
+            <PowerOff className="h-3.5 w-3.5" />
+          ) : (
+            <Power className="h-3.5 w-3.5" />
+          )}
           {channel.enabled ? t.channels.disable : t.channels.enable}
         </button>
         {!confirmDelete ? (
@@ -652,7 +666,7 @@ function ChannelDetail({
                 <button
                   onClick={handleStartQrLogin}
                   disabled={!!actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500/10 transition-colors disabled:opacity-50"
                   data-testid="channel-qr-login-btn"
                 >
                   <QrCode className="h-3.5 w-3.5" />
@@ -663,7 +677,7 @@ function ChannelDetail({
                 <button
                   onClick={handleLogout}
                   disabled={!!actionLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
                   data-testid="channel-qr-logout-btn"
                 >
                   <PowerOff className="h-3.5 w-3.5" />
