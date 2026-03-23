@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback } from "react"
 import { useI18n } from "@/i18n"
 import { useAppStore } from "@/stores/app"
 import type { DependencyStatus } from "@/api/client"
-import { Download, Loader2, CheckCircle2, AlertTriangle, Terminal, Copy, Check } from "lucide-react"
+import { Download, Loader2, CheckCircle2, AlertTriangle, Terminal, Copy, Check, ChevronRight, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { installTool } from "@/api/client"
 import { isTauri, openExternal } from "@/api/transport"
 import logoUrl from "@/assets/logo.png"
 
@@ -194,6 +195,8 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
                     dep={dep}
                     info={info}
                     isWindows={isWindows}
+                    t={t}
+                    recheckEnv={recheckEnv}
                   />
                 )
               })}
@@ -224,17 +227,47 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
   )
 }
 
-// Individual dependency card component
+// Individual dependency card component with one-click install
 function DependencyCard({
   dep,
   info,
   isWindows,
+  t,
+  recheckEnv,
 }: {
   dep: DependencyStatus
   info: ReturnType<typeof getDependencyInfo>
   isWindows: boolean
+  t: any
+  recheckEnv: () => Promise<boolean>
 }) {
   const guidance = info.guidance
+  const [installStatus, setInstallStatus] = useState<'idle' | 'installing' | 'success' | 'error'>('idle')
+  const [manualOpen, setManualOpen] = useState(false)
+
+  // Determine platform hint
+  const platformHint = (() => {
+    if (dep.name === 'git' && !isWindows) return t.envSetup.macGitHint
+    if ((dep.name === 'git' || dep.name === 'node') && isWindows) return t.envSetup.winAdminHint
+    return null
+  })()
+
+  const handleInstall = useCallback(async () => {
+    setInstallStatus('installing')
+    try {
+      const result = await installTool(dep.name)
+      if (result.ok) {
+        setInstallStatus('success')
+        await recheckEnv()
+      } else {
+        setInstallStatus('error')
+        setManualOpen(true)
+      }
+    } catch {
+      setInstallStatus('error')
+      setManualOpen(true)
+    }
+  }, [dep.name, recheckEnv])
 
   return (
     <div className="bg-muted/30 rounded-xl border border-border/30 p-4 space-y-3">
@@ -249,41 +282,96 @@ function DependencyCard({
         </div>
       </div>
 
-      {/* Install guidance */}
-      {guidance && guidance.type === "download" && (
-        <div className="space-y-3">
+      {/* One-click install button */}
+      <div className="space-y-2">
+        {installStatus === 'success' ? (
+          <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium">
+            <CheckCircle2 size={16} />
+            {t.envSetup.installSuccess}
+          </div>
+        ) : installStatus === 'error' ? (
+          <div className="text-sm text-red-500 font-medium">
+            {t.envSetup.installFailed}
+          </div>
+        ) : (
           <Button
+            variant="default"
             size="sm"
-            onClick={() => openExternal(guidance.url)}
             className="w-full gap-2 py-5 text-sm font-semibold rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all duration-200"
+            disabled={installStatus === 'installing'}
+            onClick={handleInstall}
           >
-            <Download size={16} />
-            {guidance.label}
+            {installStatus === 'installing' ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                {t.envSetup.installing.replace('{name}', info.displayName)}
+              </>
+            ) : (
+              <>
+                <Download size={16} />
+                {t.envSetup.installButton} {info.displayName}
+              </>
+            )}
           </Button>
-          {guidance.steps && (
-            <div className="space-y-1.5">
-              <ol className="space-y-1">
-                {guidance.steps.map((step, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                    <span className="shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed">{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
-      {guidance && guidance.type === "command" && (
-        <div className="space-y-2">
-          <CopyableCommand command={guidance.primary} />
-          {guidance.alternative && (
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{guidance.alternative.label}</p>
-              <CopyableCommand command={guidance.alternative.command} />
+        {/* Platform hint */}
+        {platformHint && installStatus === 'idle' && (
+          <p className="text-xs text-muted-foreground text-center">{platformHint}</p>
+        )}
+      </div>
+
+      {/* Collapsible manual install section */}
+      {guidance && (
+        <div>
+          <button
+            onClick={() => setManualOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {manualOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {t.envSetup.manualInstall}
+          </button>
+
+          {manualOpen && (
+            <div className="mt-2 space-y-2">
+              {guidance.type === "download" && (
+                <div className="space-y-3">
+                  <Button
+                    size="sm"
+                    onClick={() => openExternal(guidance.url)}
+                    className="w-full gap-2 py-5 text-sm font-semibold rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all duration-200"
+                  >
+                    <Download size={16} />
+                    {guidance.label}
+                  </Button>
+                  {guidance.steps && (
+                    <div className="space-y-1.5">
+                      <ol className="space-y-1">
+                        {guidance.steps.map((step, i) => (
+                          <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <span className="shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
+                              {i + 1}
+                            </span>
+                            <span className="leading-relaxed">{step}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {guidance.type === "command" && (
+                <div className="space-y-2">
+                  <CopyableCommand command={guidance.primary} />
+                  {guidance.alternative && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">{guidance.alternative.label}</p>
+                      <CopyableCommand command={guidance.alternative.command} />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

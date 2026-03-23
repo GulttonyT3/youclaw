@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { which, resetShellEnvCache } from '../utils/shell-env.ts'
+import { z } from 'zod/v4'
+import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 
 const health = new Hono()
 
@@ -201,6 +202,75 @@ health.get('/env-check', (c) => {
   })
 
   return c.json({ platform, dependencies })
+})
+
+// POST /api/install-tool — install a system tool (bun, git, node)
+const installToolSchema = z.object({
+  tool: z.enum(['bun', 'git', 'node']),
+})
+
+health.post('/install-tool', async (c) => {
+  const body = await c.req.json()
+  const parsed = installToolSchema.safeParse(body)
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid parameters' }, 400)
+  }
+
+  const { tool } = parsed.data
+  const isWindows = process.platform === 'win32'
+  const isMac = process.platform === 'darwin'
+
+  // Determine install command based on platform and tool
+  let command: string | null = null
+  switch (tool) {
+    case 'bun':
+      command = isWindows
+        ? 'powershell -ExecutionPolicy Bypass -c "irm bun.sh/install.ps1 | iex"'
+        : 'bash -c "curl -fsSL https://bun.sh/install | bash"'
+      break
+    case 'git':
+      if (isMac) {
+        command = 'xcode-select --install'
+      } else if (isWindows) {
+        command = 'winget install Git.Git --accept-package-agreements --accept-source-agreements --disable-interactivity'
+      }
+      break
+    case 'node':
+      if (isWindows) {
+        command = 'winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --disable-interactivity'
+      }
+      break
+  }
+
+  if (!command) {
+    return c.json({ error: `No install method available for "${tool}" on ${process.platform}` }, 400)
+  }
+
+  let stdout = ''
+  let stderr = ''
+  let exitCode = 0
+
+  try {
+    stdout = execSync(command, {
+      encoding: 'utf-8',
+      timeout: 300_000, // 5 minutes for downloads
+      windowsHide: true,
+      env: getShellEnv(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+  } catch (err: any) {
+    stdout = err.stdout ?? ''
+    stderr = err.stderr ?? ''
+    exitCode = err.status ?? 1
+    // xcode-select --install returns non-zero if CLT is already installed or dialog is shown
+    if (tool === 'git' && isMac) {
+      exitCode = 0 // Not a real error - dialog was triggered
+    }
+  }
+
+  resetShellEnvCache()
+
+  return c.json({ ok: exitCode === 0, stdout, stderr, exitCode })
 })
 
 export { health }

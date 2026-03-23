@@ -583,6 +583,13 @@ export const en = {
     copyCommand: 'Copy command',
     copied: 'Copied!',
     orAlternative: 'Or alternatively:',
+    installButton: 'Install',
+    installing: 'Installing {name}...',
+    installSuccess: 'Installed successfully!',
+    installFailed: 'Installation failed. Try manual install below.',
+    manualInstall: 'Manual install',
+    macGitHint: 'A system dialog will appear. Click "Install" to proceed.',
+    winAdminHint: 'Administrator permission may be required.',
     git: {
       name: 'Git',
       description: 'Required for version control and agent operations.',

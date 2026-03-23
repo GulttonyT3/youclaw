@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useI18n } from '@/i18n'
-import { checkEnv, type DependencyStatus } from '@/api/client'
+import { checkEnv, installTool, type DependencyStatus } from '@/api/client'
 import { CheckCircle2, XCircle, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -8,6 +8,7 @@ export function EnvironmentPanel() {
   const { t } = useI18n()
   const [dependencies, setDependencies] = useState<DependencyStatus[]>([])
   const [loading, setLoading] = useState(true)
+  const [installingTool, setInstallingTool] = useState<string | null>(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -16,6 +17,15 @@ export function EnvironmentPanel() {
       setDependencies(result.dependencies)
     } catch { /* ignore */ }
     setLoading(false)
+  }
+
+  const handleInstall = async (tool: string) => {
+    setInstallingTool(tool)
+    try {
+      await installTool(tool)
+    } catch { /* ignore */ }
+    setInstallingTool(null)
+    await refresh()
   }
 
   useEffect(() => { refresh() }, [])
@@ -62,6 +72,20 @@ export function EnvironmentPanel() {
                 )}
               </div>
             </div>
+            {!dep.available && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleInstall(dep.name)}
+                disabled={installingTool === dep.name}
+              >
+                {installingTool === dep.name ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  t.envSetup.installButton
+                )}
+              </Button>
+            )}
           </div>
         ))}
       </div>

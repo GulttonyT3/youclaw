@@ -585,6 +585,13 @@ export const zh: Translations = {
     copyCommand: '复制命令',
     copied: '已复制！',
     orAlternative: '或者：',
+    installButton: '一键安装',
+    installing: '正在安装 {name}...',
+    installSuccess: '安装成功！',
+    installFailed: '安装失败，请尝试手动安装。',
+    manualInstall: '手动安装',
+    macGitHint: '将弹出系统安装对话框，请点击"安装"继续。',
+    winAdminHint: '可能需要管理员权限确认。',
     git: {
       name: 'Git',
       description: '版本控制和 Agent 操作所需。',

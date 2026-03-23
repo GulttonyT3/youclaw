@@ -38,6 +38,16 @@ export async function checkEnv(): Promise<EnvCheckResult> {
   return apiFetch<EnvCheckResult>('/api/env-check')
 }
 
+// Install a missing tool (one-click install)
+export async function installTool(tool: string): Promise<{
+  ok: boolean; stdout: string; stderr: string; exitCode: number
+}> {
+  return apiFetch<{ ok: boolean; stdout: string; stderr: string; exitCode: number }>(
+    '/api/install-tool',
+    { method: 'POST', body: JSON.stringify({ tool }) }
+  )
+}
+
 // Send message to agent
 export async function sendMessage(
   agentId: string,
