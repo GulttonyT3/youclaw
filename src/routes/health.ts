@@ -369,8 +369,13 @@ health.post('/install-tool', async (c) => {
   }
 
   if (!command) {
-    return c.json({ error: `No install method available for "${tool}" on ${process.platform}` }, 400)
+    const msg = `No install method available for "${tool}" on ${process.platform}`
+    getLogger().warn({ category: 'install' }, `[install-${tool}] ${msg}`)
+    return c.json({ error: msg }, 400)
   }
+
+  const logger = getLogger()
+  logger.info({ category: 'install', tool, command }, `[install-${tool}] Starting installation...`)
 
   let stdout = ''
   let stderr = ''
@@ -384,6 +389,7 @@ health.post('/install-tool', async (c) => {
       env: getShellEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    logger.info({ category: 'install', tool, exitCode: 0 }, `[install-${tool}] Command completed successfully`)
   } catch (err: any) {
     stdout = err.stdout ?? ''
     stderr = err.stderr ?? ''
@@ -391,11 +397,15 @@ health.post('/install-tool', async (c) => {
     // xcode-select --install returns non-zero if CLT is already installed or dialog is shown
     if (tool === 'git' && isMac) {
       exitCode = 0
+      logger.info({ category: 'install', tool }, `[install-${tool}] xcode-select dialog triggered`)
+    } else {
+      logger.error({ category: 'install', tool, exitCode, stderr }, `[install-${tool}] Command failed`)
     }
   }
 
   resetShellEnvCache()
 
+  logger.info({ category: 'install', tool, ok: exitCode === 0 }, `[install-${tool}] Done (exitCode=${exitCode})`)
   return c.json({ ok: exitCode === 0, stdout, stderr, exitCode })
 })
 
