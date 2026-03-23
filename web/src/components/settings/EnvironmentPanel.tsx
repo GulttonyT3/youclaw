@@ -60,15 +60,15 @@ export function EnvironmentPanel() {
                   <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.required ? 'bg-red-500/10 text-red-400' : 'bg-muted text-muted-foreground'}`}>
                     {dep.required ? t.envPanel.required : t.envPanel.optional}
                   </span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.available ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {dep.available ? t.envPanel.installed : t.envPanel.notInstalled}
+                  </span>
                 </div>
                 {dep.available && dep.version && (
                   <p className="text-xs text-muted-foreground mt-0.5">{dep.version}</p>
                 )}
                 {dep.available && dep.path && (
                   <p className="text-xs text-muted-foreground font-mono truncate max-w-[300px]">{dep.path}</p>
-                )}
-                {!dep.available && (
-                  <p className="text-xs text-red-400 mt-0.5">{t.envPanel.notInstalled}</p>
                 )}
               </div>
             </div>
