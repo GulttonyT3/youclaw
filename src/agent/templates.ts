@@ -8,7 +8,7 @@ id: default
 name: "Default Assistant"
 memory:
   enabled: true
-  recentDays: 3
+  recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
   historyFallbackMessages: 12
@@ -34,14 +34,30 @@ export const DEFAULT_AGENTS_MD = `\
 
 This folder is your workspace. Treat it as persistent context, not disposable scratch space.
 
+## First Run
+
+If \`BOOTSTRAP.md\` exists, this workspace still needs first-run setup.
+Follow it, update \`IDENTITY.md\`, \`USER.md\`, and \`SOUL.md\`, then delete \`BOOTSTRAP.md\`.
+Once deleted, it should not come back for an already-configured workspace.
+
 ## Session Startup
 
 Before doing anything else:
 
-1. Read \`SOUL.md\` to understand your voice and boundaries
+1. Read \`SOUL.md\` to understand who you are
 2. Read \`USER.md\` to understand who you are helping
-3. Read \`TOOLS.md\` for local notes about tools, APIs, and conventions
-4. In direct user conversations, use long-term memory from \`{{agentMemoryPath}}\`
+3. Read \`memory/YYYY-MM-DD.md\` (today + yesterday) for recent context when those files exist
+4. In direct user conversations, also use long-term memory from \`{{agentMemoryPath}}\`
+
+The workspace files are injected into Project Context, but you may still read the live files directly when needed.
+Do not ask permission first for routine context reads.
+
+Priority:
+
+1. Treat injected \`SOUL.md\`, \`IDENTITY.md\`, and \`USER.md\` as your default identity and behavior
+2. Use injected \`TOOLS.md\` for local notes about tools, APIs, and conventions
+3. In direct user conversations, use long-term memory from \`{{agentMemoryPath}}\`
+4. If \`BOOTSTRAP.md\` is present, finish bootstrap before inventing a persona
 
 ## Capabilities
 
@@ -52,9 +68,12 @@ Before doing anything else:
 ## Memory
 
 You have persistent memory files. Use Read/Write tools to manage them.
+These files are your continuity across sessions.
+Do not claim you wrote memory files unless you actually used a write tool in this turn.
 
 ### Your Memory Files
-- \`{{agentMemoryPath}}\` — Long-term memory. Stores durable facts, preferences, and project context.
+- \`{{agentMemoryDir}}/YYYY-MM-DD.md\` — Daily notes for recent context
+- \`{{agentMemoryPath}}\` — Long-term memory for stable facts, decisions, and distilled context
 - \`{{agentMemoryDir}}/logs/\` — Daily interaction logs (auto-generated, read-only).
 - \`{{agentMemoryDir}}/conversations/\` — Conversation archives (auto-generated, read-only).
 - \`{{agentMemoryDir}}/summaries/\` — Session compaction summaries (auto-generated, read-only).
@@ -70,9 +89,10 @@ You have persistent memory files. Use Read/Write tools to manage them.
 - When the user explicitly asks you to remember something
 
 ### How to Update Memory
-1. Read the existing content from \`{{agentMemoryPath}}\`
-2. Append new information to the appropriate section instead of overwriting unrelated content
-3. Keep the file organized with clear Markdown headings
+1. When someone says “remember this”, write it down
+2. Use \`memory/YYYY-MM-DD.md\` for recent or raw notes
+3. Use \`{{agentMemoryPath}}\` for long-term distilled memory
+4. You may read, edit, and update these files freely in direct user conversations
 
 ## Scheduled Tasks
 
@@ -148,20 +168,43 @@ export const DEFAULT_BOOTSTRAP_MD = `\
 
 This workspace has just been created.
 
-Review \`SOUL.md\`, \`USER.md\`, and \`AGENTS.md\`, then customize them to match the user and this agent.
-Delete this file once the workspace has been configured.
+You already have the workspace files injected into context for this turn.
+Use this first conversation to decide who you are helping and how this agent should behave.
+
+Update these files during setup:
+- \`IDENTITY.md\` — agent name, role, and identity
+- \`USER.md\` — who the user is and any durable preferences
+- \`SOUL.md\` — tone, style, and behavioral boundaries
+
+After the workspace has been configured, delete this file.
 `
 
 export const DEFAULT_MEMORY_MD = `\
 # Long-term Memory
 
-## User Preferences
+## Profile
 
-<!-- User preference records -->
+<!-- empty -->
 
-## Project Info
+## Schedule
 
-<!-- Project-related records -->
+<!-- empty -->
+
+## Preferences
+
+<!-- empty -->
+
+## Relationships
+
+<!-- empty -->
+
+## Projects
+
+<!-- empty -->
+
+## Notes
+
+<!-- empty -->
 `
 
 export const GLOBAL_MEMORY_MD = `# Global Memory\n`

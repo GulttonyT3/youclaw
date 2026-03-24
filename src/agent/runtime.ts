@@ -24,6 +24,7 @@ import type { MemoryManager } from '../memory/index.ts'
 import { buildRecoveredConversationPrompt, resolveStoredSessionFile, type StoredSessionEntry } from './context-utils.ts'
 import { createSkillTool } from './tools/skill-tool.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
+import { clearBootstrapSnapshotOnSessionRollover } from './bootstrap-cache.ts'
 
 const COMPACTION_MEMORY_INSTRUCTIONS = [
   'Focus on durable context for future turns.',
@@ -144,6 +145,11 @@ export class AgentRuntime {
       )
 
       if (sessionId) {
+        clearBootstrapSnapshotOnSessionRollover({
+          cacheKey: `${agentId}:${chatId}`,
+          previousSessionId: existingSession?.sessionId ?? null,
+          nextSessionId: sessionId,
+        })
         saveSession(agentId, chatId, sessionId, sessionFile)
       }
 

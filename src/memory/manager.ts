@@ -2,8 +2,19 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
+import {
+  MemoryExtractor,
+  type CuratedMemoryUpdate,
+  type DailyMemoryItem,
+  type MemoryExtractionResult,
+  type MemoryExtractionRunner,
+} from './extractor.ts'
 
 const GLOBAL_AGENT_ID = '_global'
+const MEMORY_SECTION_ORDER = ['Profile', 'Schedule', 'Preferences', 'Relationships', 'Projects', 'Notes'] as const
+type MemorySection = (typeof MEMORY_SECTION_ORDER)[number]
+
+type StructuredMemoryStore = Record<MemorySection, Map<string, string>>
 
 export interface MemoryContextOptions {
   recentDays?: number
@@ -22,6 +33,8 @@ export interface SavedSessionSummary {
 }
 
 export class MemoryManager {
+  constructor(private extractor: MemoryExtractionRunner | null = new MemoryExtractor()) {}
+
   private getRootMemoryFilePath(agentId: string): string {
     const agentsDir = getPaths().agents
     return resolve(agentsDir, agentId, 'MEMORY.md')
@@ -45,6 +58,10 @@ export class MemoryManager {
 
   private getLogsDir(agentId: string): string {
     return resolve(this.getAgentMemoryDir(agentId), 'logs')
+  }
+
+  private getDailyMemoryNotePath(agentId: string, date: string): string {
+    return resolve(this.getAgentMemoryDir(agentId), `${date}.md`)
   }
 
   private getConversationsDir(agentId: string, chatId?: string): string {
@@ -71,6 +88,145 @@ export class MemoryManager {
     if (!existsSync(logsDir)) {
       mkdirSync(logsDir, { recursive: true })
     }
+  }
+
+  private createEmptyStructuredMemory(): StructuredMemoryStore {
+    return {
+      Profile: new Map(),
+      Schedule: new Map(),
+      Preferences: new Map(),
+      Relationships: new Map(),
+      Projects: new Map(),
+      Notes: new Map(),
+    }
+  }
+
+  private normalizeMemorySection(section: string): MemorySection {
+    const normalized = section.trim().toLowerCase()
+    if (normalized.includes('profile') || normalized.includes('identity')) return 'Profile'
+    if (normalized.includes('schedule') || normalized.includes('routine') || normalized.includes('time')) return 'Schedule'
+    if (normalized.includes('preference') || normalized.includes('like') || normalized.includes('food')) return 'Preferences'
+    if (normalized.includes('relationship') || normalized.includes('family') || normalized.includes('people')) return 'Relationships'
+    if (normalized.includes('project') || normalized.includes('work')) return 'Projects'
+    return 'Notes'
+  }
+
+  private normalizeMemoryKey(key: string): string {
+    return key
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80) || 'note'
+  }
+
+  private parseStructuredMemory(content: string): StructuredMemoryStore {
+    const store = this.createEmptyStructuredMemory()
+    let currentSection: MemorySection | null = null
+
+    for (const rawLine of content.split('\n')) {
+      const heading = rawLine.match(/^##\s+(.+?)\s*$/)
+      if (heading) {
+        currentSection = this.normalizeMemorySection(heading[1]!)
+        continue
+      }
+
+      if (!currentSection) continue
+      const entry = rawLine.match(/^- (?:`([^`]+)`|([^:]+)):\s+(.+?)\s*$/)
+      if (!entry) continue
+
+      const key = this.normalizeMemoryKey(entry[1] ?? entry[2] ?? '')
+      const value = (entry[3] ?? '').trim()
+      if (!key || !value) continue
+      store[currentSection].set(key, value)
+    }
+
+    return store
+  }
+
+  private renderStructuredMemory(store: StructuredMemoryStore): string {
+    const parts = ['# Long-term Memory', '']
+
+    for (const section of MEMORY_SECTION_ORDER) {
+      parts.push(`## ${section}`, '')
+      const entries = Array.from(store[section].entries()).sort(([a], [b]) => a.localeCompare(b))
+      if (entries.length === 0) {
+        parts.push('<!-- empty -->', '')
+        continue
+      }
+      for (const [key, value] of entries) {
+        parts.push(`- \`${key}\`: ${value}`)
+      }
+      parts.push('')
+    }
+
+    return parts.join('\n').trimEnd() + '\n'
+  }
+
+  private getDailyMemoryNoteDates(agentId: string): string[] {
+    const memoryDir = this.getAgentMemoryDir(agentId)
+    if (!existsSync(memoryDir)) return []
+
+    return readdirSync(memoryDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name))
+      .map((name) => name.replace(/\.md$/, ''))
+      .sort((a, b) => b.localeCompare(a))
+  }
+
+  private getDailyMemoryNote(agentId: string, date: string): string {
+    const filePath = this.getDailyMemoryNotePath(agentId, date)
+    if (!existsSync(filePath)) return ''
+    return readFileSync(filePath, 'utf-8')
+  }
+
+  private appendDailyMemoryNote(
+    agentId: string,
+    chatId: string,
+    userMessage: string,
+    items: DailyMemoryItem[],
+  ): void {
+    if (items.length === 0) return
+
+    this.ensureMemoryDir(agentId)
+    const now = new Date()
+    const date = now.toISOString().split('T')[0]!
+    const time = now.toTimeString().slice(0, 5)
+    const filePath = this.getDailyMemoryNotePath(agentId, date)
+    const existing = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : `# ${date}\n`
+    const seen = new Set(existing.split('\n').map((line) => line.trim()))
+    const deduped = items.filter((item) => !seen.has(`- ${item.text}`))
+    if (deduped.length === 0) return
+    const entryLines = [
+      '',
+      `## ${time} [${chatId}]`,
+      `- Source: ${this.truncate(userMessage.replace(/\s+/g, ' ').trim(), 300)}`,
+      ...deduped.map((item) => `- ${item.text}`),
+      '',
+    ]
+    writeFileSync(filePath, existing + entryLines.join('\n'), 'utf-8')
+  }
+
+  private applyCuratedMemoryUpdates(agentId: string, updates: CuratedMemoryUpdate[]): CuratedMemoryUpdate[] {
+    if (updates.length === 0) return []
+
+    const store = this.parseStructuredMemory(this.getMemory(agentId))
+    const applied: CuratedMemoryUpdate[] = []
+
+    for (const update of updates) {
+      const section = this.normalizeMemorySection(update.section)
+      const key = this.normalizeMemoryKey(update.key)
+      const value = update.value.trim()
+      if (!key || !value) continue
+      if (store[section].get(key) === value) continue
+      store[section].set(key, value)
+      applied.push({ section, key, value })
+    }
+
+    if (applied.length > 0) {
+      this.updateMemory(agentId, this.renderStructuredMemory(store))
+    }
+
+    return applied
   }
 
   private ensureConversationsDir(agentId: string): void {
@@ -126,6 +282,37 @@ export class MemoryManager {
     const filePath = this.getMemoryFilePath(agentId)
     writeFileSync(filePath, content, 'utf-8')
     getLogger().info({ agentId }, 'MEMORY.md updated')
+  }
+
+  async rememberTurn(agentId: string, chatId: string, userMessage: string, assistantReply: string): Promise<MemoryExtractionResult> {
+    if (!this.extractor) {
+      return { dailyMemories: [], curatedUpdates: [] }
+    }
+    if (!userMessage.trim()) return { dailyMemories: [], curatedUpdates: [] }
+    if (!assistantReply.trim() || assistantReply.startsWith('Error:')) {
+      return { dailyMemories: [], curatedUpdates: [] }
+    }
+
+    const now = new Date().toISOString().split('T')[0]!
+    const currentDailyMemory = this.getDailyMemoryNote(agentId, now)
+
+    const extracted = await this.extractor.extractTurnMemory({
+      agentId,
+      chatId,
+      currentMemory: this.getMemory(agentId),
+      currentDailyMemory,
+      userMessage,
+      assistantReply,
+    })
+
+    if (extracted.dailyMemories.length > 0) {
+      this.appendDailyMemoryNote(agentId, chatId, userMessage, extracted.dailyMemories)
+    }
+    const appliedCurated = this.applyCuratedMemoryUpdates(agentId, extracted.curatedUpdates)
+    return {
+      dailyMemories: extracted.dailyMemories,
+      curatedUpdates: appliedCurated,
+    }
   }
 
   /**
@@ -226,18 +413,37 @@ export class MemoryManager {
    * Supports configurable day count and character limit
    */
   getMemoryContext(agentId: string, options?: MemoryContextOptions): string {
-    const recentDays = options?.recentDays ?? 3
+    const recentDays = options?.recentDays ?? 2
     const maxContextChars = options?.maxContextChars ?? 10000
 
     const globalMemory = this.getGlobalMemory()
     const longTermMemory = this.getMemory(agentId)
+    const noteDates = this.getDailyMemoryNoteDates(agentId)
+    const recentNoteDates = noteDates.slice(0, recentDays)
     const dates = this.getDailyLogDates(agentId)
     const recentDates = dates.slice(0, recentDays)
     const summaryFiles = this.getSessionSummaryFiles(agentId).slice(0, recentDays)
 
     let recentLogs = ''
+    let recentNotes = ''
     let recentSummaries = ''
     let totalChars = globalMemory.length + longTermMemory.length
+
+    for (const date of recentNoteDates) {
+      const note = this.getDailyMemoryNote(agentId, date)
+      if (!note) continue
+
+      if (totalChars + note.length > maxContextChars) {
+        const remaining = maxContextChars - totalChars
+        if (remaining > 100) {
+          recentNotes += note.slice(0, remaining) + '\n...[memory notes truncated]\n'
+        }
+        break
+      }
+
+      totalChars += note.length
+      recentNotes += note + '\n'
+    }
 
     for (const date of recentDates) {
       const log = this.getDailyLog(agentId, date)
@@ -281,6 +487,9 @@ export class MemoryManager {
       parts.push(`<global_memory>\n${globalMemory}\n</global_memory>`)
     }
 
+    if (recentNotes.trim()) {
+      parts.push(`<recent_notes>\n${recentNotes.trimEnd()}\n</recent_notes>`)
+    }
     parts.push(`<long_term>\n${longTermMemory}\n</long_term>`)
     parts.push(`<recent_logs>\n${recentLogs.trimEnd()}\n</recent_logs>`)
     if (recentSummaries.trim()) {

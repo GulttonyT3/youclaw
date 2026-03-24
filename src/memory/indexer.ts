@@ -73,6 +73,16 @@ export class MemoryIndexer {
 
     if (!existsSync(memoryDir)) return count
 
+    const noteFiles = readdirSync(memoryDir).filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+    for (const file of noteFiles) {
+      const filePath = resolve(memoryDir, file)
+      const content = readFileSync(filePath, 'utf-8')
+      if (content.trim()) {
+        this.indexFile(agentId, 'note', filePath, content)
+        count++
+      }
+    }
+
     // Index logs/
     const logsDir = resolve(memoryDir, 'logs')
     if (existsSync(logsDir)) {

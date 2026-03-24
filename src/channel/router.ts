@@ -126,9 +126,36 @@ export class MessageRouter {
         config.id,
         message.chatId,
         contentForAgent,
-        requestedSkills.length > 0 ? requestedSkills : undefined,
-        message.browserProfileId,
-        message.attachments,
+        {
+          requestedSkills: requestedSkills.length > 0 ? requestedSkills : undefined,
+          browserProfileId: message.browserProfileId,
+          attachments: message.attachments,
+          afterResult: async (result) => {
+            if (!this.memoryManager) return
+
+            try {
+              this.memoryManager.appendDailyLog(
+                config.id,
+                message.chatId,
+                message.content,
+                result,
+                config.memory?.maxLogEntryLength,
+              )
+            } catch (logErr) {
+              getLogger().error({ error: logErr, agentId: config.id }, 'Failed to append daily log')
+            }
+
+            if (message.isGroup || config.memory?.enabled === false) {
+              return
+            }
+
+            try {
+              await this.memoryManager.rememberTurn(config.id, message.chatId, message.content, result)
+            } catch (memoryErr) {
+              getLogger().error({ error: memoryErr, agentId: config.id }, 'Failed to append daily memory note')
+            }
+          },
+        },
       )
 
       if (!reply.trim()) {
@@ -147,15 +174,6 @@ export class MessageRouter {
         isFromMe: true,
         isBotMessage: true,
       })
-
-      // Append to daily log
-      if (this.memoryManager) {
-        try {
-          this.memoryManager.appendDailyLog(config.id, message.chatId, message.content, reply, config.memory?.maxLogEntryLength)
-        } catch (logErr) {
-          getLogger().error({ error: logErr, agentId: config.id }, 'Failed to append daily log')
-        }
-      }
     } catch (err) {
       logger.error({ error: err, chatId: message.chatId }, 'Message processing failed')
     }

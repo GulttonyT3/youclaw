@@ -71,7 +71,7 @@ describe('MemoryManager enhanced features', () => {
     expect(context1).not.toContain('day10')
   })
 
-  test('default recentDays=3', () => {
+  test('default recentDays=2', () => {
     const agentId = createAgentId('mem-default-days')
     mkdirSync(getLogsDir(agentId), { recursive: true })
     writeFileSync(getMemoryFile(agentId), '')
@@ -83,7 +83,7 @@ describe('MemoryManager enhanced features', () => {
     const context = memoryManager.getMemoryContext(agentId)
     expect(context).toContain('day11')
     expect(context).toContain('day10')
-    expect(context).toContain('day9')
+    expect(context).not.toContain('day9')
     expect(context).not.toContain('day8')
   })
 

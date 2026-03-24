@@ -89,6 +89,7 @@ describe('MessageRouter.handleInbound', () => {
   test('auto-parses skill invocations, saves message, and records daily log', async () => {
     const enqueue = mock(() => Promise.resolve('router reply'))
     const appendDailyLog = mock(() => {})
+    const rememberTurn = mock(() => Promise.resolve([]))
     const loadAllSkills = mock(() => [
       { name: 'pdf', usable: true },
       { name: 'agent-browser', usable: true },
@@ -99,7 +100,7 @@ describe('MessageRouter.handleInbound', () => {
       } as any,
       { enqueue } as any,
       new EventBus(),
-      { appendDailyLog } as any,
+      { appendDailyLog, rememberTurn } as any,
       { loadAllSkills } as any,
     )
 
@@ -112,7 +113,12 @@ describe('MessageRouter.handleInbound', () => {
     expect(enqueue.mock.calls[0]?.[0]).toBe('agent-1')
     expect(enqueue.mock.calls[0]?.[1]).toBe('web:chat-1')
     expect(enqueue.mock.calls[0]?.[2]).toBe('summarize report')
-    expect(enqueue.mock.calls[0]?.[3]).toEqual(['pdf', 'agent-browser'])
+    expect(enqueue.mock.calls[0]?.[3]).toMatchObject({
+      requestedSkills: ['pdf', 'agent-browser'],
+    })
+    const afterResult = enqueue.mock.calls[0]?.[3]?.afterResult as ((result: string) => Promise<void>) | undefined
+    expect(typeof afterResult).toBe('function')
+    await afterResult?.('router reply')
     expect(appendDailyLog).toHaveBeenCalledWith(
       'agent-1',
       'web:chat-1',
@@ -120,11 +126,17 @@ describe('MessageRouter.handleInbound', () => {
       'router reply',
       undefined,
     )
+    expect(rememberTurn).toHaveBeenCalledWith(
+      'agent-1',
+      'web:chat-1',
+      '/pdf /agent-browser summarize report',
+      'router reply',
+    )
 
     const chats = getChats()
     const messages = getMessages('web:chat-1', 10)
     expect(chats.length).toBe(1)
-    expect(chats[0]?.name).toBe('Alice')
+    expect(chats[0]?.name).toBe('/pdf /agent-browser summarize report')
     expect(chats[0]?.channel).toBe('web')
     expect(messages.length).toBe(2)
     expect(messages.some((message) => message.content === '/pdf /agent-browser summarize report')).toBe(true)
@@ -151,7 +163,9 @@ describe('MessageRouter.handleInbound', () => {
 
     expect(loadAllSkills).toHaveBeenCalledTimes(0)
     expect(enqueue.mock.calls[0]?.[2]).toBe('/pdf keep raw content')
-    expect(enqueue.mock.calls[0]?.[3]).toEqual(['explicit-skill'])
+    expect(enqueue.mock.calls[0]?.[3]).toMatchObject({
+      requestedSkills: ['explicit-skill'],
+    })
   })
 })
 

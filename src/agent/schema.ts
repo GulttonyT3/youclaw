@@ -90,7 +90,7 @@ export const AgentConfigSchema = z.object({
   // Memory config (enhanced)
   memory: z.object({
     enabled: z.boolean().default(false),
-    recentDays: z.number().default(3),
+    recentDays: z.number().default(2),
     maxContextChars: z.number().default(10000),
     archiveConversations: z.boolean().default(true),
     maxLogEntryLength: z.number().default(500),

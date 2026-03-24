@@ -8,8 +8,16 @@ interface QueueItem {
   requestedSkills?: string[]
   browserProfileId?: string
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
+  afterResult?: (result: string) => Promise<void>
   resolve: (result: string) => void
   reject: (error: Error) => void
+}
+
+export interface EnqueueOptions {
+  requestedSkills?: string[]
+  browserProfileId?: string
+  attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
+  afterResult?: (result: string) => Promise<void>
 }
 
 /**
@@ -34,11 +42,21 @@ export class AgentQueue {
   /**
    * Enqueue a message and return the agent's reply
    */
-  async enqueue(agentId: string, chatId: string, prompt: string, requestedSkills?: string[], browserProfileId?: string, attachments?: Array<{ filename: string; mediaType: string; filePath: string }>): Promise<string> {
+  async enqueue(agentId: string, chatId: string, prompt: string, options?: EnqueueOptions): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const chatKey = `${agentId}:${chatId}`
       const queue = this.chatQueues.get(chatKey) ?? []
-      queue.push({ agentId, chatId, prompt, requestedSkills, browserProfileId, attachments, resolve, reject })
+      queue.push({
+        agentId,
+        chatId,
+        prompt,
+        requestedSkills: options?.requestedSkills,
+        browserProfileId: options?.browserProfileId,
+        attachments: options?.attachments,
+        afterResult: options?.afterResult,
+        resolve,
+        reject,
+      })
       this.chatQueues.set(chatKey, queue)
 
       // Update agent state queueDepth
@@ -179,6 +197,19 @@ export class AgentQueue {
           }, timeoutMs),
         ),
       ])
+
+      if (item.afterResult) {
+        try {
+          await item.afterResult(result)
+        } catch (postErr) {
+          logger.error({
+            agentId: item.agentId,
+            chatId: item.chatId,
+            error: postErr instanceof Error ? postErr.message : String(postErr),
+            category: 'queue',
+          }, 'Post-result callback failed')
+        }
+      }
 
       // Update agent state
       managed.state.isProcessing = false

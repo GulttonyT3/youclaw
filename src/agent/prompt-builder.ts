@@ -8,6 +8,7 @@ import { detectChromePath } from '../utils/chrome.ts'
 import type { SkillsLoader } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { AgentConfig } from './types.ts'
+import { getOrLoadBootstrapDocs } from './bootstrap-cache.ts'
 
 const WORKSPACE_FILES = [
   { filename: 'AGENTS.md' },
@@ -50,13 +51,24 @@ export class PromptBuilder {
     const ipcTasksDir = resolve(getPaths().data, 'ipc', agentId, 'tasks')
     const ipcCurrentTasksPath = resolve(getPaths().data, 'ipc', agentId, 'current_tasks.json')
 
-    const workspaceDocs = this.loadWorkspaceDocs(workspaceDir, {
-      agentMemoryDir,
-      agentMemoryPath,
-      globalMemoryPath,
-      ipcTasksDir,
-      ipcCurrentTasksPath,
-    })
+    const workspaceDocs = context?.chatId
+      ? getOrLoadBootstrapDocs({
+          cacheKey: this.getBootstrapCacheKey(agentId, context.chatId),
+          loader: () => this.loadWorkspaceDocs(workspaceDir, {
+            agentMemoryDir,
+            agentMemoryPath,
+            globalMemoryPath,
+            ipcTasksDir,
+            ipcCurrentTasksPath,
+          }),
+        })
+      : this.loadWorkspaceDocs(workspaceDir, {
+          agentMemoryDir,
+          agentMemoryPath,
+          globalMemoryPath,
+          ipcTasksDir,
+          ipcCurrentTasksPath,
+        })
 
     if (workspaceDocs.length > 0) {
       parts.push(
@@ -86,7 +98,7 @@ export class PromptBuilder {
     }
 
     // Inject memory context
-    if (this.memoryManager && context) {
+    if (this.memoryManager && context && config.memory?.enabled !== false) {
       const memoryConfig = config.memory
       const memoryContext = this.memoryManager.getMemoryContext(context.agentId, {
         recentDays: memoryConfig?.recentDays,
@@ -166,6 +178,10 @@ export class PromptBuilder {
     }
 
     return loaded
+  }
+
+  private getBootstrapCacheKey(agentId: string, chatId: string): string {
+    return `${agentId}:${chatId}`
   }
 
   /**

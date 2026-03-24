@@ -1,10 +1,11 @@
 import { Hono } from 'hono'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { resolve, basename } from 'node:path'
+import { resolve } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import type { AgentManager } from '../agent/index.ts'
-import { DEFAULT_WORKSPACE_DOCS, DEFAULT_MEMORY_MD, EDITABLE_WORKSPACE_DOCS } from '../agent/index.ts'
+import { EDITABLE_WORKSPACE_DOCS } from '../agent/index.ts'
+import { ensureAgentWorkspace } from '../agent/workspace.ts'
 
 const ALLOWED_DOCS = [...EDITABLE_WORKSPACE_DOCS, 'MEMORY.md'] as const
 type AllowedDoc = (typeof ALLOWED_DOCS)[number]
@@ -149,13 +150,13 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     // Create agent directory
     mkdirSync(agentDir, { recursive: true })
 
-    // Create memory subdirectory
-    mkdirSync(resolve(agentDir, 'memory'), { recursive: true })
-
     // Write agent.yaml
     const config: Record<string, unknown> = {
       id,
       name: body.name,
+      memory: {
+        enabled: true,
+      },
       skills: [],
     }
     if (body.model) {
@@ -163,14 +164,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     }
 
     writeFileSync(resolve(agentDir, 'agent.yaml'), stringifyYaml(config))
-
-    // Initialize workspace documents from built-in templates
-    for (const filename of Object.keys(DEFAULT_WORKSPACE_DOCS)) {
-      const targetFilePath = resolve(agentDir, filename)
-      const content = DEFAULT_WORKSPACE_DOCS[filename] ?? `# ${basename(filename, '.md')}\n`
-      writeFileSync(targetFilePath, content)
-    }
-    writeFileSync(resolve(agentDir, 'MEMORY.md'), DEFAULT_MEMORY_MD)
+    ensureAgentWorkspace(agentDir, { ensureBootstrap: true })
 
     // Reload agents
     await agentManager.reloadAgents()

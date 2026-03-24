@@ -15,8 +15,9 @@ import type { SecretsManager } from './secrets.ts'
 import type { SkillsLoader } from '../skills/loader.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
 import {
-  DEFAULT_AGENT_YAML, DEFAULT_WORKSPACE_DOCS, DEFAULT_MEMORY_MD, GLOBAL_MEMORY_MD,
+  DEFAULT_AGENT_YAML, GLOBAL_MEMORY_MD,
 } from './templates.ts'
+import { ensureAgentWorkspace } from './workspace.ts'
 
 export class AgentManager {
   private agents: Map<string, AgentInstance> = new Map()
@@ -59,37 +60,17 @@ export class AgentManager {
     if (!existsSync(resolve(defaultDir, 'agent.yaml'))) {
       logger.info('Initializing default agent template...')
       mkdirSync(defaultDir, { recursive: true })
-      mkdirSync(resolve(defaultDir, 'memory'), { recursive: true })
-      mkdirSync(resolve(defaultDir, 'skills'), { recursive: true })
-      mkdirSync(resolve(defaultDir, 'prompts'), { recursive: true })
       writeFileSync(resolve(defaultDir, 'agent.yaml'), DEFAULT_AGENT_YAML)
-      this.ensureWorkspaceDocs(defaultDir, { includeBootstrap: true })
-      writeFileSync(resolve(defaultDir, 'MEMORY.md'), DEFAULT_MEMORY_MD)
-    } else {
-      this.ensureWorkspaceDocs(defaultDir, { includeBootstrap: false })
-      this.ensureMemoryFile(defaultDir)
     }
+    ensureAgentWorkspace(defaultDir, {
+      ensureBootstrap: true,
+      ensureSkillsDir: true,
+      ensurePromptsDir: true,
+    })
 
     if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
       mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
       writeFileSync(resolve(globalDir, 'memory', 'MEMORY.md'), GLOBAL_MEMORY_MD)
-    }
-  }
-
-  private ensureWorkspaceDocs(agentDir: string, options: { includeBootstrap: boolean }): void {
-    for (const [filename, content] of Object.entries(DEFAULT_WORKSPACE_DOCS)) {
-      if (!options.includeBootstrap && filename === 'BOOTSTRAP.md') continue
-      const filePath = resolve(agentDir, filename)
-      if (!existsSync(filePath)) {
-        writeFileSync(filePath, content)
-      }
-    }
-  }
-
-  private ensureMemoryFile(agentDir: string): void {
-    const rootMemoryPath = resolve(agentDir, 'MEMORY.md')
-    if (!existsSync(rootMemoryPath)) {
-      writeFileSync(rootMemoryPath, DEFAULT_MEMORY_MD)
     }
   }
 
