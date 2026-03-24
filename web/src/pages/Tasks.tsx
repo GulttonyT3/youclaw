@@ -12,6 +12,7 @@ import {
 import type { ScheduledTaskDTO, TaskRunLogDTO } from '../api/client'
 import { cn } from '../lib/utils'
 import { buildCronExpression, createDefaultCronDraft, parseCronExpression, type CronDraft, type CronMode } from '../lib/task-cron'
+import { INTERVAL_UNITS, buildIntervalScheduleValue, formatIntervalLabel, parseIntervalScheduleValue, type IntervalUnit } from '../lib/task-interval'
 import { useI18n } from '../i18n'
 import { SidePanel } from '@/components/layout/SidePanel'
 import { useDragRegion } from "@/hooks/useDragRegion"
@@ -68,21 +69,9 @@ function formatDuration(ms: number): string {
 
 function scheduleLabel(type: string, value: string): string {
   if (type === 'cron') return `cron: ${value}`
-  if (type === 'interval') {
-    const ms = parseInt(value, 10)
-    if (ms < 60_000) return `every ${ms / 1000}s`
-    if (ms < 3_600_000) return `every ${ms / 60_000}m`
-    return `every ${ms / 3_600_000}h`
-  }
+  if (type === 'interval') return formatIntervalLabel(value)
   if (type === 'once') return `once: ${new Date(value).toLocaleString()}`
   return value
-}
-
-// Convert milliseconds back to minutes (for interval edit display)
-function msToMinutes(ms: string): string {
-  const n = parseInt(ms, 10)
-  if (isNaN(n)) return ms
-  return String(n / 60_000)
 }
 
 function pad2(n: number): string {
@@ -981,8 +970,17 @@ function TaskForm({
   onCancel: () => void
 }) {
   const { t } = useI18n()
+  const intervalUnitLabels: Record<IntervalUnit, string> = {
+    minute: t.tasks.minute,
+    hour: t.tasks.hour,
+    day: t.tasks.day,
+    week: t.tasks.week,
+  }
   const isEdit = !!task
   const initialCronState = createInitialCronState(task)
+  const initialIntervalInput = task?.schedule_type === 'interval'
+    ? parseIntervalScheduleValue(task.schedule_value)
+    : { value: '', unit: 'minute' as IntervalUnit }
   const initialScheduleType: 'cron' | 'interval' | 'once' =
     task?.schedule_type === 'cron' || task?.schedule_type === 'once'
       ? task.schedule_type
@@ -995,10 +993,11 @@ function TaskForm({
   const [scheduleType, setScheduleType] = useState<'cron' | 'interval' | 'once'>(initialScheduleType)
   const [scheduleValue, setScheduleValue] = useState(() => {
     if (!task) return ''
-    if (task.schedule_type === 'interval') return msToMinutes(task.schedule_value)
+    if (task.schedule_type === 'interval') return initialIntervalInput.value
     if (task.schedule_type === 'once') return isoToDatetimeLocal(task.schedule_value)
     return ''
   })
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initialIntervalInput.unit)
   const [cronMode, setCronMode] = useState<CronMode>(initialCronState.mode)
   const [cronDraft, setCronDraft] = useState<CronDraft>(initialCronState.draft)
   const [cronCustomValue, setCronCustomValue] = useState(initialCronState.customValue)
@@ -1063,13 +1062,14 @@ function TaskForm({
     try {
       let finalValue = rawScheduleValue
       if (scheduleType === 'interval') {
-        const mins = parseFloat(scheduleValue)
-        if (isNaN(mins) || mins <= 0) {
+        const intervalScheduleValue = buildIntervalScheduleValue(scheduleValue, intervalUnit)
+        const intervalMs = intervalScheduleValue ? Number.parseInt(intervalScheduleValue, 10) : Number.NaN
+        if (!intervalScheduleValue || Number.isNaN(intervalMs) || intervalMs < 60_000) {
           setError(t.tasks.invalidInterval)
           setSubmitting(false)
           return
         }
-        finalValue = String(Math.round(mins * 60_000))
+        finalValue = intervalScheduleValue
       }
       if (scheduleType === 'once') {
         const d = new Date(scheduleValue)
@@ -1197,7 +1197,11 @@ function TaskForm({
                     return
                   }
                   if (st === 'interval') {
-                    setScheduleValue(task?.schedule_type === 'interval' ? msToMinutes(task.schedule_value) : '')
+                    const nextIntervalInput = task?.schedule_type === 'interval'
+                      ? parseIntervalScheduleValue(task.schedule_value)
+                      : { value: '', unit: 'minute' as IntervalUnit }
+                    setScheduleValue(nextIntervalInput.value)
+                    setIntervalUnit(nextIntervalInput.unit)
                   } else {
                     setScheduleValue('')
                   }
@@ -1220,7 +1224,7 @@ function TaskForm({
         {/* Schedule Value */}
         <div>
           <label className={FORM_LABEL_WITH_MARGIN_CLASS}>
-            {scheduleType === 'interval' && t.tasks.intervalMinutes}
+            {scheduleType === 'interval' && t.tasks.interval}
             {scheduleType === 'cron' && t.tasks.cronExpression}
             {scheduleType === 'once' && t.tasks.runAt}
           </label>
@@ -1282,18 +1286,35 @@ function TaskForm({
               disabled={submitting}
             />
           ) : (
-            <input
-              data-testid="task-input-schedule"
-              type="text"
-              value={scheduleValue}
-              onChange={(e) => setScheduleValue(e.target.value)}
-              placeholder={
-                scheduleType === 'interval'
-                  ? t.tasks.intervalPlaceholder
-                  : t.tasks.cronPlaceholder
-              }
-              className="w-full rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            <div className="flex gap-2">
+              <input
+                data-testid="task-input-schedule"
+                type="number"
+                value={scheduleValue}
+                onChange={(e) => setScheduleValue(e.target.value)}
+                inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder={t.tasks.intervalPlaceholder}
+                className="flex-1 rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <Select
+                value={intervalUnit}
+                onValueChange={(value) => setIntervalUnit(value as IntervalUnit)}
+                disabled={submitting}
+              >
+                <SelectTrigger data-testid="task-select-interval-unit" className="w-[140px] shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INTERVAL_UNITS.map((unit) => (
+                    <SelectItem key={unit} value={unit}>
+                      {intervalUnitLabels[unit]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
 
