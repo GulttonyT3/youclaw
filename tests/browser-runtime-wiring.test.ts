@@ -16,6 +16,10 @@ describe('browser runtime wiring', () => {
     expect(promptBuilder).toContain('Prefer the built-in \\`mcp__browser__*\\` tools')
     expect(promptBuilder).toContain('Use the legacy \\`agent-browser\\` skill only when you need capabilities not yet covered')
     expect(promptBuilder).toContain('agent-browser --session ${context.browserProfile.id} --profile ${context.browserProfile.userDataDir} <command>')
+    expect(promptBuilder).toContain('Manual login is the default and recommended flow')
+    expect(promptBuilder).toContain('Do NOT ask the user for credentials')
+    expect(promptBuilder).toContain('If the site shows CAPTCHA, 2FA, device verification')
+    expect(promptBuilder).toContain('For sensitive or high-impact actions, prepare the page and then ask the user to review, confirm, or complete the final step manually')
   })
 
   test('agent runtime injects the built-in browser MCP server', () => {
