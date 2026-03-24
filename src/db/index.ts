@@ -314,6 +314,11 @@ export function saveSession(agentId: string, chatId: string, sessionId: string) 
   )
 }
 
+export function deleteSession(agentId: string, chatId: string) {
+  const db = getDatabase()
+  db.run('DELETE FROM sessions WHERE agent_id = ? AND chat_id = ?', [agentId, chatId])
+}
+
 // ===== Scheduled Task Operations =====
 
 export interface ScheduledTask {

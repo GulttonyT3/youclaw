@@ -5,7 +5,7 @@ import { existsSync, copyFileSync, mkdirSync, statSync, chmodSync, writeFileSync
 import { execSync } from 'node:child_process'
 import { getEnv } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
-import { getSession, saveSession } from '../db/index.ts'
+import { deleteSession, getSession, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
@@ -638,7 +638,7 @@ export class AgentRuntime {
         category: 'agent',
       }, 'SDK env config before query')
 
-      const { fullText, sessionId } = await this.executeQuery(
+      const { fullText, sessionId, aborted } = await this.executeQuery(
         finalPrompt,
         agentId,
         chatId,
@@ -649,8 +649,10 @@ export class AgentRuntime {
         params.attachments,
       )
 
-      // Save session
-      if (sessionId) {
+      // Save or clear session
+      if (aborted) {
+        deleteSession(agentId, chatId)
+      } else if (sessionId) {
         saveSession(agentId, chatId, sessionId)
       }
 
@@ -668,14 +670,18 @@ export class AgentRuntime {
         }
       }
 
-      // Broadcast completion event
-      this.eventBus.emit({
-        type: 'complete',
-        agentId,
-        chatId,
-        fullText: finalText,
-        sessionId,
-      })
+      // Broadcast completion event. Skip empty abort completions to avoid
+      // creating empty assistant messages while still letting processing=false
+      // arrive through the finally path.
+      if (!aborted || finalText.trim().length > 0) {
+        this.eventBus.emit({
+          type: 'complete',
+          agentId,
+          chatId,
+          fullText: finalText,
+          sessionId,
+        })
+      }
 
       const durationMs = Date.now() - startTime
       logger.info({ agentId, chatId, sessionId, responseLength: finalText.length, durationMs, category: 'agent' }, 'Message processing completed')
@@ -737,7 +743,7 @@ export class AgentRuntime {
     requestedSkills?: string[],
     browserProfileId?: string,
     attachments?: Array<{ filename: string; mediaType: string; filePath: string }>,
-  ): Promise<{ fullText: string; sessionId: string }> {
+  ): Promise<{ fullText: string; sessionId: string; aborted: boolean }> {
     const logger = getLogger()
     const abortController = new AbortController()
     abortRegistry.register(chatId, abortController)
@@ -1029,7 +1035,7 @@ export class AgentRuntime {
       // User-initiated abort — return partial text gracefully instead of throwing
       if (abortController.signal.aborted) {
         logger.info({ agentId, chatId, category: 'agent' }, 'SDK query aborted by user, returning partial text')
-        return { fullText, sessionId }
+        return { fullText, sessionId, aborted: true }
       }
 
       // When SDK process crashes, fullText may contain actual error info from upstream API
@@ -1094,7 +1100,7 @@ export class AgentRuntime {
       category: 'agent',
     }, 'SDK query finished')
 
-    return { fullText, sessionId }
+    return { fullText, sessionId, aborted: false }
   }
 
   /**
