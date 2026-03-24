@@ -453,6 +453,8 @@ export const en = {
   memory: {
     title: 'Memory',
     memoryFile: 'MEMORY.md',
+    globalFile: 'Global MEMORY.md',
+    globalHint: 'Shared by all agents.',
     saving: 'Saving...',
     writePlaceholder: 'Write long-term memory here...',
     noContent: 'No memory content yet. Click Edit to add notes.',

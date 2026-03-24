@@ -22,13 +22,21 @@ export interface SavedSessionSummary {
 }
 
 export class MemoryManager {
+  private getRootMemoryFilePath(agentId: string): string {
+    const agentsDir = getPaths().agents
+    return resolve(agentsDir, agentId, 'MEMORY.md')
+  }
+
   private getAgentMemoryDir(agentId: string): string {
     const agentsDir = getPaths().agents
     return resolve(agentsDir, agentId, 'memory')
   }
 
   private getMemoryFilePath(agentId: string): string {
-    return resolve(this.getAgentMemoryDir(agentId), 'MEMORY.md')
+    if (agentId === GLOBAL_AGENT_ID) {
+      return resolve(this.getAgentMemoryDir(agentId), 'MEMORY.md')
+    }
+    return this.getRootMemoryFilePath(agentId)
   }
 
   private getSnapshotFilePath(agentId: string): string {

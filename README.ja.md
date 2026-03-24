@@ -228,13 +228,13 @@ src/
 ├── events/         # EventBus（stream/tool_use/complete/error）
 ├── ipc/            # Agent とメインプロセス間のファイルポーリング IPC
 ├── logger/         # Pino ロガー
-├── memory/         # Agent ごとの MEMORY.md と会話ログ
+├── memory/         # ルート MEMORY.md と Agent ごとのログ/アーカイブ用メモリ補助
 ├── routes/         # Hono API ルート（/api/*）
 ├── scheduler/      # Cron/interval/once タスクスケジューラ
 ├── skills/         # スキルローダー、ウォッチャー、frontmatter パーサ
 src-tauri/
 ├── src/            # Rust メインプロセス（sidecar、window、tray、updater）
-agents/             # Agent 設定（agent.yaml + SOUL.md + skills/）
+agents/             # Agent ワークスペース（agent.yaml + bootstrap 文書 + MEMORY.md + skills/）
 skills/             # プロジェクトレベルのスキル（SKILL.md 形式）
 e2e/                # E2E テスト（Playwright）
 web/src/

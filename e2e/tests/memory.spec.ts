@@ -7,8 +7,7 @@ test.describe('Memory 管理', () => {
   })
 
   test('Memory 页面加载', async ({ page }) => {
-    // Agent 选择器可见
-    await expect(page.getByTestId('memory-select-agent')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('MEMORY.md')).toBeVisible({ timeout: 10_000 })
   })
 
   test('查看和编辑 MEMORY.md', async ({ page }) => {
@@ -44,23 +43,8 @@ test.describe('Memory 管理', () => {
     await page.getByTestId('memory-save-btn').click()
   })
 
-  test('切换 Tab', async ({ page }) => {
-    // 切换到 Logs tab
-    const logsTab = page.getByTestId('memory-tab-logs')
-    if (await logsTab.isVisible()) {
-      await logsTab.click()
-    }
-
-    // 切换到 Archives tab
-    const archivesTab = page.getByTestId('memory-tab-archives')
-    if (await archivesTab.isVisible()) {
-      await archivesTab.click()
-    }
-
-    // 切换到 Search tab
-    const searchTab = page.getByTestId('memory-tab-search')
-    if (await searchTab.isVisible()) {
-      await searchTab.click()
-    }
+  test('Memory 页面只显示全局记忆编辑器', async ({ page }) => {
+    await expect(page.getByText(/Global MEMORY\.md|全局 MEMORY\.md/)).toBeVisible()
+    await expect(page.getByTestId('memory-edit-btn')).toBeVisible()
   })
 })

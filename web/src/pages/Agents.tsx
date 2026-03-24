@@ -80,10 +80,14 @@ type SubAgentsMap = Record<string, SubAgentDef>
 
 // Document file list and icon descriptions
 const DOC_FILES = [
+  { name: 'AGENTS.md', label: 'Agents', desc: 'Workspace Rules & Standing Orders' },
   { name: 'SOUL.md', label: 'Soul', desc: 'Personality & Style' },
-  { name: 'AGENT.md', label: 'Agent', desc: 'Capabilities & Rules' },
+  { name: 'IDENTITY.md', label: 'Identity', desc: 'Agent Identity & Role' },
   { name: 'USER.md', label: 'User', desc: 'User Info & Preferences' },
   { name: 'TOOLS.md', label: 'Tools', desc: 'Tool Notes & APIs' },
+  { name: 'MEMORY.md', label: 'Memory', desc: 'Agent-Specific Long-Term Memory' },
+  { name: 'HEARTBEAT.md', label: 'Heartbeat', desc: 'Lightweight Maintenance Guidance' },
+  { name: 'BOOTSTRAP.md', label: 'Bootstrap', desc: 'First-Run Workspace Notes' },
 ] as const
 
 type ViewMode = 'detail' | 'create'
@@ -198,7 +202,6 @@ export function Agents() {
   }
 
   const selectedAgent = agents.find((a) => a.id === selected)
-
   // Save document
   const handleSaveDoc = async () => {
     if (!selected || !editingDoc) return

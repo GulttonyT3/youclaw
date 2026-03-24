@@ -30,7 +30,6 @@ async function createRealManager(skillsLoader?: any) {
     undefined,
     undefined,
     undefined,
-    undefined,
     skillsLoader,
   )
   await manager.loadAgents()
@@ -86,8 +85,9 @@ describe('agents routes', () => {
   test('docs endpoint only returns allowed documents, and supports read and update', async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), 'youclaw-agent-docs-'))
     tempWorkspaces.push(workspaceDir)
-    writeFileSync(resolve(workspaceDir, 'AGENT.md'), '# Agent')
+    writeFileSync(resolve(workspaceDir, 'AGENTS.md'), '# Agents')
     writeFileSync(resolve(workspaceDir, 'USER.md'), '# User')
+    writeFileSync(resolve(workspaceDir, 'MEMORY.md'), '# Memory')
     writeFileSync(resolve(workspaceDir, 'README.md'), '# Ignored')
 
     const app = createAgentsRoutes({
@@ -102,21 +102,22 @@ describe('agents routes', () => {
     } as any)
 
     const listRes = await app.request('/agents/agent-docs/docs')
-    const getRes = await app.request('/agents/agent-docs/docs/AGENT.md')
-    const putRes = await app.request('/agents/agent-docs/docs/AGENT.md', {
+    const getRes = await app.request('/agents/agent-docs/docs/AGENTS.md')
+    const putRes = await app.request('/agents/agent-docs/docs/AGENTS.md', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: '# Updated Agent' }),
+      body: JSON.stringify({ content: '# Updated Agents' }),
     })
     const invalidRes = await app.request('/agents/agent-docs/docs/README.md')
 
     expect(await listRes.json()).toEqual({
-      'AGENT.md': '# Agent',
+      'AGENTS.md': '# Agents',
       'USER.md': '# User',
+      'MEMORY.md': '# Memory',
     })
-    expect(await getRes.json()).toEqual({ filename: 'AGENT.md', content: '# Agent' })
+    expect(await getRes.json()).toEqual({ filename: 'AGENTS.md', content: '# Agents' })
     expect(putRes.status).toBe(200)
-    expect(readFileSync(resolve(workspaceDir, 'AGENT.md'), 'utf-8')).toBe('# Updated Agent')
+    expect(readFileSync(resolve(workspaceDir, 'AGENTS.md'), 'utf-8')).toBe('# Updated Agents')
     expect(invalidRes.status).toBe(400)
   })
 
@@ -142,7 +143,7 @@ describe('agents routes', () => {
     expect(body.name).toBe('Route Create Agent')
     expect(existsSync(resolve(agentDir, 'agent.yaml'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'memory'))).toBe(true)
-    expect(existsSync(resolve(agentDir, 'AGENT.md'))).toBe(true)
+    expect(existsSync(resolve(agentDir, 'AGENTS.md'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'SOUL.md'))).toBe(true)
     expect(manager.getAgent(agentId)?.config.name).toBe('Route Create Agent')
   })
@@ -434,21 +435,27 @@ describe('agents routes', () => {
     expect(yamlContent.skills).toEqual([])
 
     // Verify all workspace docs are created
+    expect(existsSync(resolve(agentDir, 'AGENTS.md'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'SOUL.md'))).toBe(true)
-    expect(existsSync(resolve(agentDir, 'AGENT.md'))).toBe(true)
+    expect(existsSync(resolve(agentDir, 'IDENTITY.md'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'USER.md'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'TOOLS.md'))).toBe(true)
+    expect(existsSync(resolve(agentDir, 'HEARTBEAT.md'))).toBe(true)
+    expect(existsSync(resolve(agentDir, 'BOOTSTRAP.md'))).toBe(true)
 
     // Verify memory directory and MEMORY.md
     expect(existsSync(resolve(agentDir, 'memory'))).toBe(true)
-    expect(existsSync(resolve(agentDir, 'memory', 'MEMORY.md'))).toBe(true)
+    expect(existsSync(resolve(agentDir, 'MEMORY.md'))).toBe(true)
 
     // Verify template files have non-empty content
+    expect(readFileSync(resolve(agentDir, 'AGENTS.md'), 'utf-8').length).toBeGreaterThan(0)
     expect(readFileSync(resolve(agentDir, 'SOUL.md'), 'utf-8').length).toBeGreaterThan(0)
-    expect(readFileSync(resolve(agentDir, 'AGENT.md'), 'utf-8').length).toBeGreaterThan(0)
+    expect(readFileSync(resolve(agentDir, 'IDENTITY.md'), 'utf-8').length).toBeGreaterThan(0)
     expect(readFileSync(resolve(agentDir, 'USER.md'), 'utf-8').length).toBeGreaterThan(0)
     expect(readFileSync(resolve(agentDir, 'TOOLS.md'), 'utf-8').length).toBeGreaterThan(0)
-    expect(readFileSync(resolve(agentDir, 'memory', 'MEMORY.md'), 'utf-8').length).toBeGreaterThan(0)
+    expect(readFileSync(resolve(agentDir, 'HEARTBEAT.md'), 'utf-8').length).toBeGreaterThan(0)
+    expect(readFileSync(resolve(agentDir, 'BOOTSTRAP.md'), 'utf-8').length).toBeGreaterThan(0)
+    expect(readFileSync(resolve(agentDir, 'MEMORY.md'), 'utf-8').length).toBeGreaterThan(0)
   })
 
   test('DELETE /agents/:id forbids deleting default, allows deleting regular agent', async () => {

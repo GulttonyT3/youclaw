@@ -22,7 +22,7 @@ function getAgentMemoryDir(agentId: string) {
 }
 
 function getMemoryFile(agentId: string) {
-  return resolve(getAgentMemoryDir(agentId), 'MEMORY.md')
+  return resolve(getPaths().agents, agentId, 'MEMORY.md')
 }
 
 function getLogsDir(agentId: string) {

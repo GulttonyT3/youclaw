@@ -228,13 +228,13 @@ src/
 ├── events/         # EventBus（stream/tool_use/complete/error）
 ├── ipc/            # Agent 与主进程间的文件轮询 IPC
 ├── logger/         # Pino 日志
-├── memory/         # 按 Agent 隔离的 MEMORY.md 与会话日志
+├── memory/         # 根目录 MEMORY.md 与各 Agent 日志/归档的内存辅助模块
 ├── routes/         # Hono API 路由（/api/*）
 ├── scheduler/      # Cron/interval/once 任务调度
 ├── skills/         # 技能加载器、监听器、frontmatter 解析
 src-tauri/
 ├── src/            # Rust 主进程（sidecar、window、tray、updater）
-agents/             # Agent 配置（agent.yaml + SOUL.md + skills/）
+agents/             # Agent 工作区（agent.yaml + bootstrap 文档 + MEMORY.md + skills/）
 skills/             # 项目级技能（SKILL.md 格式）
 e2e/                # E2E 测试（Playwright）
 web/src/

@@ -15,8 +15,7 @@ import type { SecretsManager } from './secrets.ts'
 import type { SkillsLoader } from '../skills/loader.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
 import {
-  DEFAULT_AGENT_YAML, DEFAULT_SOUL_MD, DEFAULT_AGENT_MD,
-  DEFAULT_USER_MD, DEFAULT_TOOLS_MD, DEFAULT_MEMORY_MD, GLOBAL_MEMORY_MD,
+  DEFAULT_AGENT_YAML, DEFAULT_WORKSPACE_DOCS, DEFAULT_MEMORY_MD, GLOBAL_MEMORY_MD,
 } from './templates.ts'
 
 export class AgentManager {
@@ -64,32 +63,33 @@ export class AgentManager {
       mkdirSync(resolve(defaultDir, 'skills'), { recursive: true })
       mkdirSync(resolve(defaultDir, 'prompts'), { recursive: true })
       writeFileSync(resolve(defaultDir, 'agent.yaml'), DEFAULT_AGENT_YAML)
-      writeFileSync(resolve(defaultDir, 'SOUL.md'), DEFAULT_SOUL_MD)
-      writeFileSync(resolve(defaultDir, 'AGENT.md'), DEFAULT_AGENT_MD)
-      writeFileSync(resolve(defaultDir, 'USER.md'), DEFAULT_USER_MD)
-      writeFileSync(resolve(defaultDir, 'TOOLS.md'), DEFAULT_TOOLS_MD)
-      writeFileSync(resolve(defaultDir, 'memory', 'MEMORY.md'), DEFAULT_MEMORY_MD)
+      this.ensureWorkspaceDocs(defaultDir, { includeBootstrap: true })
+      writeFileSync(resolve(defaultDir, 'MEMORY.md'), DEFAULT_MEMORY_MD)
     } else {
-      // Sync AGENT.md template if it exists but doesn't contain placeholder syntax
-      // This ensures template updates (e.g., IPC path placeholders) propagate to existing agents
-      const agentMdPath = resolve(defaultDir, 'AGENT.md')
-      if (existsSync(agentMdPath)) {
-        try {
-          const currentContent = readFileSync(agentMdPath, 'utf-8')
-          if (!currentContent.includes('{{ipcTasksDir}}') || !currentContent.includes('Do NOT use the built-in CronCreate')) {
-            writeFileSync(agentMdPath, DEFAULT_AGENT_MD)
-            logger.info('Updated default agent AGENT.md with latest template')
-          }
-        } catch (err) {
-          logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to sync AGENT.md template')
-        }
-      }
-
+      this.ensureWorkspaceDocs(defaultDir, { includeBootstrap: false })
+      this.ensureMemoryFile(defaultDir)
     }
 
     if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
       mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
       writeFileSync(resolve(globalDir, 'memory', 'MEMORY.md'), GLOBAL_MEMORY_MD)
+    }
+  }
+
+  private ensureWorkspaceDocs(agentDir: string, options: { includeBootstrap: boolean }): void {
+    for (const [filename, content] of Object.entries(DEFAULT_WORKSPACE_DOCS)) {
+      if (!options.includeBootstrap && filename === 'BOOTSTRAP.md') continue
+      const filePath = resolve(agentDir, filename)
+      if (!existsSync(filePath)) {
+        writeFileSync(filePath, content)
+      }
+    }
+  }
+
+  private ensureMemoryFile(agentDir: string): void {
+    const rootMemoryPath = resolve(agentDir, 'MEMORY.md')
+    if (!existsSync(rootMemoryPath)) {
+      writeFileSync(rootMemoryPath, DEFAULT_MEMORY_MD)
     }
   }
 

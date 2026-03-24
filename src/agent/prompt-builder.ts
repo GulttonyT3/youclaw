@@ -9,8 +9,20 @@ import type { SkillsLoader } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { AgentConfig } from './types.ts'
 
-// Workspace MD file loading order
-const WORKSPACE_FILES = ['SOUL.md', 'USER.md', 'AGENT.md', 'TOOLS.md'] as const
+const WORKSPACE_FILES = [
+  { filename: 'AGENTS.md' },
+  { filename: 'SOUL.md' },
+  { filename: 'TOOLS.md' },
+  { filename: 'IDENTITY.md' },
+  { filename: 'USER.md' },
+  { filename: 'HEARTBEAT.md' },
+  { filename: 'BOOTSTRAP.md' },
+ ] as const
+
+type LoadedWorkspaceDoc = {
+  filePath: string
+  content: string
+}
 
 export class PromptBuilder {
   constructor(
@@ -20,7 +32,7 @@ export class PromptBuilder {
 
   /**
    * Build the complete system prompt
-   * Loading order: SOUL.md -> USER.md -> AGENT.md -> TOOLS.md -> Memory -> Env
+   * Loading order: bootstrap files -> browser -> memory -> env
    */
   build(
     workspaceDir: string,
@@ -29,33 +41,38 @@ export class PromptBuilder {
   ): string {
     const parts: string[] = []
 
-    // Memory file absolute paths
     const agentMemoryDir = resolve(workspaceDir, 'memory')
-    const agentMemoryPath = resolve(agentMemoryDir, 'MEMORY.md')
+    const rootMemoryPath = resolve(workspaceDir, 'MEMORY.md')
+    const agentMemoryPath = rootMemoryPath
     const globalMemoryPath = resolve(getPaths().agents, '_global', 'memory', 'MEMORY.md')
 
-    // IPC absolute paths (agent writes here, IPC Watcher reads from here)
     const agentId = context?.agentId ?? 'default'
     const ipcTasksDir = resolve(getPaths().data, 'ipc', agentId, 'tasks')
     const ipcCurrentTasksPath = resolve(getPaths().data, 'ipc', agentId, 'current_tasks.json')
 
-    // Load workspace MD files in order
-    for (const filename of WORKSPACE_FILES) {
-      let content = this.loadMdFile(workspaceDir, filename)
-      if (content) {
-        // Replace memory path placeholders with absolute paths
-        content = content
-          .replaceAll('{{agentMemoryDir}}', agentMemoryDir)
-          .replaceAll('{{agentMemoryPath}}', agentMemoryPath)
-          .replaceAll('{{globalMemoryPath}}', globalMemoryPath)
-          .replaceAll('{{ipcTasksDir}}', ipcTasksDir)
-          .replaceAll('{{ipcCurrentTasksPath}}', ipcCurrentTasksPath)
-        parts.push(content)
+    const workspaceDocs = this.loadWorkspaceDocs(workspaceDir, {
+      agentMemoryDir,
+      agentMemoryPath,
+      globalMemoryPath,
+      ipcTasksDir,
+      ipcCurrentTasksPath,
+    })
+
+    if (workspaceDocs.length > 0) {
+      parts.push(
+        '## Workspace Files (injected)',
+        'These user-editable files are loaded from the agent workspace and included below in Project Context.',
+        '',
+        '# Project Context',
+        '',
+      )
+
+      for (const doc of workspaceDocs) {
+        parts.push(`## ${doc.filePath}`, '', doc.content, '')
       }
     }
 
-    // If workspace has no MD files, fall back to global system.md
-    if (parts.length === 0) {
+    if (workspaceDocs.length === 0) {
       const fallback = this.loadGlobalSystemPrompt()
       if (fallback) {
         parts.push(fallback)
@@ -117,24 +134,38 @@ export class PromptBuilder {
   }
 
   /**
-   * Load workspace MD file, skip if missing (no error)
+   * Load workspace docs.
    */
-  private loadMdFile(workspaceDir: string, filename: string): string | null {
-    const filePath = resolve(workspaceDir, filename)
+  private loadWorkspaceDocs(
+    workspaceDir: string,
+    replacements: Record<string, string>,
+  ): LoadedWorkspaceDoc[] {
+    const loaded: LoadedWorkspaceDoc[] = []
 
-    if (existsSync(filePath)) {
+    for (const spec of WORKSPACE_FILES) {
+      const filename = spec.filename
+      const filePath = resolve(workspaceDir, filename)
+      if (!existsSync(filePath)) continue
+
       try {
-        const content = readFileSync(filePath, 'utf-8').trim()
-        if (content) {
-          getLogger().debug({ filename, source: 'workspace' }, 'Prompt file loaded')
-          return content
+        let content = readFileSync(filePath, 'utf-8').trim()
+        if (!content) continue
+
+        for (const [key, value] of Object.entries(replacements)) {
+          content = content.replaceAll(`{{${key}}}`, value)
         }
+
+        getLogger().debug({ filename, source: 'workspace' }, 'Prompt file loaded')
+        loaded.push({
+          filePath,
+          content,
+        })
       } catch (err) {
         getLogger().warn({ filename, error: err instanceof Error ? err.message : String(err) }, 'Failed to read prompt file')
       }
     }
 
-    return null
+    return loaded
   }
 
   /**

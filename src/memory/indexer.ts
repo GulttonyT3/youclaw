@@ -59,12 +59,10 @@ export class MemoryIndexer {
   private indexAgentMemory(agentId: string): number {
     const agentsDir = getPaths().agents
     const memoryDir = resolve(agentsDir, agentId, 'memory')
-    if (!existsSync(memoryDir)) return 0
 
     let count = 0
 
-    // Index MEMORY.md
-    const memoryFile = resolve(memoryDir, 'MEMORY.md')
+    const memoryFile = resolve(agentsDir, agentId, 'MEMORY.md')
     if (existsSync(memoryFile)) {
       const content = readFileSync(memoryFile, 'utf-8')
       if (content.trim()) {
@@ -72,6 +70,8 @@ export class MemoryIndexer {
         count++
       }
     }
+
+    if (!existsSync(memoryDir)) return count
 
     // Index logs/
     const logsDir = resolve(memoryDir, 'logs')

@@ -455,6 +455,8 @@ export const zh: Translations = {
   memory: {
     title: '记忆',
     memoryFile: 'MEMORY.md',
+    globalFile: '全局 MEMORY.md',
+    globalHint: '所有 agent 共用。',
     saving: '保存中...',
     writePlaceholder: '在此编写长期记忆...',
     noContent: '暂无记忆内容。点击编辑添加笔记。',

@@ -50,7 +50,7 @@ src/
 ├── events/         # EventBus + type definitions (stream/tool_use/complete/error/subagent_*)
 ├── ipc/            # IpcWatcher (file-polling IPC), task snapshot writer
 ├── logger/         # Pino logger
-├── memory/         # MemoryManager (per-agent MEMORY.md + logs)
+├── memory/         # MemoryManager (root MEMORY.md + per-agent logs/archives/summaries)
 ├── routes/         # Hono API routes (agents/messages/stream/skills/memory/tasks/system/health)
 ├── scheduler/      # Scheduler (30s polling, cron/interval/once, backoff, stuck detection)
 ├── skills/         # SkillsLoader (3-tier priority: workspace > builtin > user), SkillsWatcher (hot reload), eligibility check, frontmatter parser, /skill invocation syntax
@@ -60,7 +60,7 @@ src-tauri/
 ├── bin/            # Bun sidecar compiled binaries
 ├── icons/          # App & tray icons (includes trayTemplate for macOS menu bar)
 agents/
-├── <id>/           # agent.yaml + SOUL.md + TOOLS.md + USER.md + AGENT.md + skills/ + memory/ + prompts/
+├── <id>/           # agent.yaml + AGENTS.md + SOUL.md + IDENTITY.md + USER.md + TOOLS.md + HEARTBEAT.md + BOOTSTRAP.md + MEMORY.md + skills/ + memory/ + prompts/
 skills/             # Project-level skills (SKILL.md format, YAML frontmatter)
 prompts/            # system.md (system prompt), env.md (environment description)
 web/src/
