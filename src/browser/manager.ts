@@ -55,6 +55,20 @@ export class BrowserManager {
     return createBrowserProfile(input)
   }
 
+  resolveProfileSelection(overrideProfileId?: string, agentDefaultProfileId?: string): BrowserProfile {
+    if (overrideProfileId) {
+      const override = getBrowserProfile(overrideProfileId)
+      if (override) return override
+    }
+
+    if (agentDefaultProfileId) {
+      const fallback = getBrowserProfile(agentDefaultProfileId)
+      if (fallback) return fallback
+    }
+
+    return this.ensureDefaultProfile()
+  }
+
   updateProfile(id: string, patch: UpdateBrowserProfileInput): BrowserProfile | null {
     return updateBrowserProfile(id, patch)
   }

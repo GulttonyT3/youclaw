@@ -1,5 +1,7 @@
 export { BrowserManager } from './manager.ts'
 export { createBrowserRoutes } from './routes.ts'
+export { createBrowserMcpServer, logBrowserToolRegistration } from './mcp.ts'
+export { disconnectAllBrowserSessions } from './pw-session.ts'
 export {
   createBrowserProfile,
   updateBrowserProfile,

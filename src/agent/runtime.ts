@@ -18,6 +18,8 @@ import { preprocessAttachments } from './document-converter.ts'
 import { abortRegistry } from './abort-registry.ts'
 import { getActiveModelConfig } from '../settings/manager.ts'
 import { getAuthToken } from '../routes/auth.ts'
+import type { BrowserManager } from '../browser/index.ts'
+import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 
 // Safe logger wrapper — resolveCliPath() may run before logger is initialised
@@ -422,6 +424,7 @@ export class AgentRuntime {
   private promptBuilder: PromptBuilder
   private compiler: AgentCompiler | null
   private hooksManager: HooksManager | null
+  private browserManager: BrowserManager | null
 
   constructor(
     config: AgentConfig,
@@ -429,12 +432,14 @@ export class AgentRuntime {
     promptBuilder: PromptBuilder,
     compiler?: AgentCompiler,
     hooksManager?: HooksManager,
+    browserManager?: BrowserManager,
   ) {
     this.config = config
     this.eventBus = eventBus
     this.promptBuilder = promptBuilder
     this.compiler = compiler ?? null
     this.hooksManager = hooksManager ?? null
+    this.browserManager = browserManager ?? null
   }
 
   /**
@@ -737,12 +742,16 @@ export class AgentRuntime {
     abortRegistry.register(chatId, abortController)
     let fullText = ''
     let sessionId = existingSessionId ?? ''
+    const resolvedBrowserProfile = this.browserManager
+      ? this.browserManager.resolveProfileSelection(browserProfileId, this.config.browserProfile)
+      : null
+    const effectiveBrowserProfileId = resolvedBrowserProfile?.id
 
     // Build system prompt on the fly
     const systemPrompt = this.promptBuilder.build(
       this.config.workspaceDir,
       this.config,
-      { agentId, chatId, requestedSkills, browserProfileId },
+      { agentId, chatId, requestedSkills, browserProfileId: effectiveBrowserProfileId },
     )
 
     // Build query options
@@ -755,6 +764,7 @@ export class AgentRuntime {
       model,
       isResume: !!existingSessionId,
       mcpServers: mcpServerNames.length > 0 ? mcpServerNames : undefined,
+      browserProfileId: effectiveBrowserProfileId,
       subAgents: this.config.agents ? Object.keys(this.config.agents).length : 0,
       maxTurns: this.config.maxTurns,
       category: 'agent',
@@ -817,6 +827,15 @@ export class AgentRuntime {
     // Always inject built-in minimax MCP (runs in-process, no external dependency)
     mcpServers['minimax'] = createBuiltinMcpServer()
     mcpServers['document'] = createDocumentMcpServer(chatId)
+    if (this.browserManager && resolvedBrowserProfile) {
+      mcpServers['browser'] = createBrowserMcpServer({
+        browserManager: this.browserManager,
+        chatId,
+        agentId,
+        profileId: resolvedBrowserProfile.id,
+      })
+      logBrowserToolRegistration(resolvedBrowserProfile.id)
+    }
     queryOptions.mcpServers = mcpServers as Record<string, import('@anthropic-ai/claude-agent-sdk').McpServerConfig>
 
     // Tool access control (ensure Skill tool is always included)

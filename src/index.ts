@@ -138,6 +138,7 @@ async function main() {
       agentRouter,
       secretsManager,
       skillsLoader,
+      browserManager,
     )
     await agentManager.loadAgents()
     agentManagerRef = agentManager
