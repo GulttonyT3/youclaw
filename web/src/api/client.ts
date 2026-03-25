@@ -19,12 +19,41 @@ export async function checkGit() {
   return apiFetch<{ available: boolean; path: string | null }>('/api/git-check')
 }
 
+// Environment dependency status
+export interface DependencyStatus {
+  name: string
+  available: boolean
+  path: string | null
+  version: string | null
+  required: boolean
+}
+
+export interface EnvCheckResult {
+  platform: string
+  dependencies: DependencyStatus[]
+}
+
+// Check environment dependencies
+export async function checkEnv(): Promise<EnvCheckResult> {
+  return apiFetch<EnvCheckResult>('/api/env-check')
+}
+
+// Install a missing tool (one-click install)
+export async function installTool(tool: string): Promise<{
+  ok: boolean; stdout: string; stderr: string; exitCode: number
+}> {
+  return apiFetch<{ ok: boolean; stdout: string; stderr: string; exitCode: number }>(
+    '/api/install-tool',
+    { method: 'POST', body: JSON.stringify({ tool }) }
+  )
+}
+
 // Send message to agent
 export async function sendMessage(
   agentId: string,
   prompt: string,
   chatId?: string,
-  browserProfileId?: string,
+  browserProfileId?: string | null,
   attachments?: Attachment[],
   messageId?: string,
 ) {

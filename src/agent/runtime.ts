@@ -1,7 +1,5 @@
 import { createAgentSession, createCodingTools, SessionManager, AuthStorage } from '@mariozechner/pi-coding-agent'
-import type { AgentSession, AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { SessionEntry } from '@mariozechner/pi-coding-agent'
-import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
+import type { AgentSession, AgentSessionEvent, SessionEntry, ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { mkdirSync, existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getEnv } from '../config/index.ts'
@@ -49,7 +47,13 @@ type AssistantSessionMessage = {
   content?: Array<{ type?: string; text?: string }>
 }
 
-type RuntimeAttachment = { filename: string; mediaType: string; filePath?: string; data?: string; size?: number }
+type RuntimeAttachment = {
+  filename: string
+  mediaType: string
+  filePath?: string
+  data?: string
+  size?: number
+}
 
 export class AgentRuntime {
   private config: AgentConfig
@@ -82,7 +86,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Process a user message and return the agent's reply
+   * Process a user message and return the agent's reply.
    */
   async process(params: ProcessParams): Promise<string> {
     const { chatId, prompt, agentId } = params
@@ -232,7 +236,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Execute agent query via pi-mono in-process session
+   * Execute agent query via pi-mono in-process session.
    */
   private async executeQuery(
     prompt: string,
@@ -240,16 +244,23 @@ export class AgentRuntime {
     chatId: string,
     existingSession: StoredSessionEntry | null,
     modelConfig: { apiKey: string; baseUrl: string; modelId: string; provider: string },
-    browserProfileId?: string,
+    browserProfileId?: string | null,
     requestedSkills?: string[],
-    attachments?: Array<{ filename: string; mediaType: string; filePath?: string; data?: string; size?: number }>,
+    attachments?: RuntimeAttachment[],
   ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null }> {
     const logger = getLogger()
     const env = getEnv()
     const abortController = new AbortController()
     abortRegistry.register(chatId, abortController)
+
+    const browserDisabled = browserProfileId === null
     const resolvedBrowserProfile = this.browserManager
-      ? this.browserManager.resolveProfileSelection(browserProfileId, this.config.browser?.defaultProfile ?? this.config.browserProfile)
+      ? (browserDisabled
+          ? null
+          : this.browserManager.resolveProfileSelection(
+              browserProfileId ?? undefined,
+              this.config.browser?.defaultProfile ?? this.config.browserProfile,
+            ))
       : null
     const effectiveBrowserProfileId = resolvedBrowserProfile?.id
     const skillsPrompt = this.skillsLoader
@@ -275,6 +286,7 @@ export class AgentRuntime {
         skillsPrompt,
         memoryContext,
         browserProfileId: effectiveBrowserProfileId,
+        browserDisabled,
         browserProfile: resolvedBrowserProfile
           ? {
               id: resolvedBrowserProfile.id,
@@ -343,10 +355,11 @@ export class AgentRuntime {
       const compactionSummaries: CompactionSummary[] = []
       await this.prepareSessionForPrompt(session, agentId, chatId, model.id, compactionSummaries)
 
+      const browserDisabledNotice = { sent: false }
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         this.handleSessionEvent(event, agentId, chatId, (text) => {
           fullText += text
-        }, compactionSummaries)
+        }, compactionSummaries, browserDisabled, browserDisabledNotice)
       })
 
       const promptWithFallback = (!existingSessionFile || !existsSync(existingSessionFile))
@@ -427,7 +440,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Handle a pi-mono session event and map to YouClaw EventBus events
+   * Handle a pi-mono session event and map to YouClaw EventBus events.
    */
   private handleSessionEvent(
     event: AgentSessionEvent,
@@ -435,6 +448,8 @@ export class AgentRuntime {
     chatId: string,
     appendText: (text: string) => void,
     compactionSummaries: CompactionSummary[],
+    browserDisabled = false,
+    browserDisabledNotice: { sent: boolean } = { sent: false },
   ): void {
     switch (event.type) {
       case 'message_update': {
@@ -456,6 +471,14 @@ export class AgentRuntime {
           category: 'tool_use',
         }, `Tool call: ${event.toolName}`)
 
+        const disabledBrowserReason = this.getDisabledBrowserToolBlockReason(event.toolName, event.args, browserDisabled)
+        if (disabledBrowserReason && !browserDisabledNotice.sent) {
+          browserDisabledNotice.sent = true
+          const message = this.buildDisabledBrowserUserMessage(disabledBrowserReason)
+          appendText(message)
+          this.emitStream(agentId, chatId, message)
+        }
+
         if (this.hooksManager) {
           this.hooksManager.execute(agentId, 'pre_tool_use', {
             agentId,
@@ -467,7 +490,7 @@ export class AgentRuntime {
               this.emitStream(agentId, chatId, `\n[Tool ${event.toolName} blocked by hook: ${ctx.abortReason ?? 'unknown reason'}]\n`)
             }
           }).catch(() => {
-            // Hook errors should not affect main flow
+            // Hook errors should not affect main flow.
           })
         }
 
@@ -485,6 +508,26 @@ export class AgentRuntime {
       case 'auto_compaction_start':
         break
     }
+  }
+
+  private getDisabledBrowserToolBlockReason(toolName: string, input: unknown, browserDisabled: boolean): string | null {
+    if (!browserDisabled) return null
+    if (!input || typeof input !== 'object') return null
+
+    const payload = input as Record<string, unknown>
+    if (toolName === 'Skill' && payload.skill === 'agent-browser') {
+      return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
+    }
+
+    if (toolName === 'Bash' && typeof payload.command === 'string' && /\bagent-browser\b/.test(payload.command)) {
+      return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
+    }
+
+    return null
+  }
+
+  private buildDisabledBrowserUserMessage(reason: string): string {
+    return `This chat is currently set to "No browser". ${reason}`
   }
 
   private buildRecoveredPrompt(chatId: string, prompt: string): string {
@@ -566,7 +609,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Convert errors to user-readable messages with error codes
+   * Convert errors to user-readable messages with error codes.
    */
   private humanizeError(raw: string): { message: string; errorCode: ErrorCode } {
     const normalizedRaw = normalizeAssistantErrorMessage(raw) ?? raw

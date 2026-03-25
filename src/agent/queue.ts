@@ -6,7 +6,7 @@ interface QueueItem {
   chatId: string
   prompt: string
   requestedSkills?: string[]
-  browserProfileId?: string
+  browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   afterResult?: (result: string) => Promise<void>
   resolve: (result: string) => void
@@ -15,7 +15,7 @@ interface QueueItem {
 
 export interface EnqueueOptions {
   requestedSkills?: string[]
-  browserProfileId?: string
+  browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   afterResult?: (result: string) => Promise<void>
 }

@@ -92,3 +92,41 @@ web/src/
 - Database migrations use try/catch ALTER TABLE pattern (no dedicated migration tool)
 - API routes mounted under `/api` prefix
 - Tauri Store for desktop settings persistence (API Key, Base URL, port, theme)
+
+## Release & Changelog
+
+Use `/release` or `/release beta` command (defined in `.claude/commands/release.md`) to automate the full release workflow.
+
+### Tag naming
+- Stable: `v0.0.X` (triggers CI build + OSS upload + updater)
+- Beta: `v0.0.X-beta.N` (triggers CI build only, draft release)
+
+### Changelog format (Chinese, with emoji section headers)
+```markdown
+> One-line English summary of the release
+
+## ✨ New Features
+- **Feature name**：Description of what it does and why it matters
+
+## 🚀 Improvements
+- **Improvement name**：What changed and what's the benefit
+
+## 🐛 Bug Fixes
+- Description of the fix
+
+## 🔧 CI/CD
+- Description of CI/CD changes
+```
+
+Note: Do NOT include a Contributors section — GitHub automatically shows contributor avatars below the release notes.
+
+### Rules
+- Summarize by feature/topic, do NOT list every commit
+- Use Chinese for descriptions
+- Always include the one-line English summary at the top (blockquote)
+- Omit empty sections
+- Use `gh release edit` if CI already created the release, `gh release create` otherwise
+
+### Claude Code commands
+- Team commands: `.claude/commands/*.md` (committed to git, shared with team)
+- Personal commands: `.claude/commands/local-*.md` (gitignored, local only)

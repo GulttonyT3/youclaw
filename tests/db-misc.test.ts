@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { cleanTables } from './setup.ts'
 import {
   deleteChat,
+  deleteSession,
   getChats,
   getMessages,
   getSession,
@@ -69,5 +70,11 @@ describe('session storage', () => {
       sessionId: 'session-2',
       sessionFile: '/tmp/session-2.jsonl',
     })
+  })
+
+  test('can be deleted', () => {
+    saveSession('agent-1', 'web:chat-1', 'session-1')
+    deleteSession('agent-1', 'web:chat-1')
+    expect(getSession('agent-1', 'web:chat-1')).toBeNull()
   })
 })

@@ -17,7 +17,7 @@ const WORKSPACE_FILES = [
   { filename: 'USER.md' },
   { filename: 'HEARTBEAT.md' },
   { filename: 'BOOTSTRAP.md' },
- ] as const
+] as const
 
 type LoadedWorkspaceDoc = {
   filePath: string
@@ -28,11 +28,13 @@ export class PromptBuilder {
   constructor(
     private skillsLoader: SkillsLoader | null,
     private memoryManager: MemoryManager | null,
-  ) {}
+  ) {
+    void this.skillsLoader
+  }
 
   /**
-   * Build the complete system prompt
-   * Loading order: bootstrap files -> browser -> memory -> env
+   * Build the complete system prompt.
+   * Loading order: workspace docs -> browser -> skills -> memory -> env -> channel.
    */
   build(
     workspaceDir: string,
@@ -44,6 +46,7 @@ export class PromptBuilder {
       skillsPrompt?: string
       memoryContext?: string
       browserProfileId?: string
+      browserDisabled?: boolean
       browserProfile?: {
         id: string
         driver: BrowserDriver
@@ -54,10 +57,8 @@ export class PromptBuilder {
     const parts: string[] = []
 
     const agentMemoryDir = resolve(workspaceDir, 'memory')
-    const rootMemoryPath = resolve(workspaceDir, 'MEMORY.md')
-    const agentMemoryPath = rootMemoryPath
+    const agentMemoryPath = resolve(workspaceDir, 'MEMORY.md')
     const globalMemoryPath = resolve(getPaths().agents, '_global', 'memory', 'MEMORY.md')
-
     const agentId = context?.agentId ?? 'default'
     const ipcTasksDir = resolve(getPaths().data, 'ipc', agentId, 'tasks')
     const ipcCurrentTasksPath = resolve(getPaths().data, 'ipc', agentId, 'current_tasks.json')
@@ -93,16 +94,23 @@ export class PromptBuilder {
       for (const doc of workspaceDocs) {
         parts.push(`## ${doc.filePath}`, '', doc.content, '')
       }
-    }
-
-    if (workspaceDocs.length === 0) {
+    } else {
       const fallback = this.loadGlobalSystemPrompt()
       if (fallback) {
         parts.push(fallback)
       }
     }
 
-    if (context?.browserProfileId) {
+    if (context?.browserDisabled) {
+      parts.push(
+        `## Browser Policy\n` +
+        `Browser use is explicitly disabled for this chat. ` +
+        `Do NOT use the built-in \`mcp__browser__*\` tools. ` +
+        `Do NOT invoke the legacy \`agent-browser\` skill and do NOT run \`agent-browser\` from Bash. ` +
+        `Solve the task without browser automation by default. ` +
+        `If web search, WebFetch, or other non-browser methods are blocked by login walls, CAPTCHA, 2FA, device verification, bot checks, or other site verification, stop trying browser tools and reply with a short, user-facing explanation that browser mode is currently off and can be enabled by switching this chat from "None" to a browser profile, then retrying in browser mode.`
+      )
+    } else if (context?.browserProfileId) {
       const fallbackHint = context.browserProfile?.driver === 'managed' && context.browserProfile.userDataDir
         ? `\nIf you must use legacy \`agent-browser\` for unsupported operations, reuse this managed profile:\n` +
           '```bash\n' +
@@ -123,7 +131,6 @@ export class PromptBuilder {
       )
     }
 
-    // Inject memory context
     if (context?.skillsPrompt) {
       parts.push(context.skillsPrompt)
     }
@@ -131,17 +138,15 @@ export class PromptBuilder {
     if (context?.memoryContext) {
       parts.push(context.memoryContext)
     } else if (this.memoryManager && context && config.memory?.enabled !== false) {
-      const memoryConfig = config.memory
       const memoryContext = this.memoryManager.getMemoryContext(context.agentId, {
-        recentDays: memoryConfig?.recentDays,
-        maxContextChars: memoryConfig?.maxContextChars,
+        recentDays: config.memory?.recentDays,
+        maxContextChars: config.memory?.maxContextChars,
       })
       if (memoryContext) {
         parts.push(memoryContext)
       }
     }
 
-    // Inject environment context
     const envContext = this.buildEnvContext()
     if (envContext) {
       parts.push(envContext)
@@ -152,7 +157,6 @@ export class PromptBuilder {
       parts.push(channelContext)
     }
 
-    // Inject image tool usage rule (built-in minimax MCP is always available)
     parts.push(
       `## Image Handling Rule\n` +
       `When the user sends or references image files (jpg, png, gif, webp, bmp, svg, etc.), you MUST use the \`mcp__minimax__understand_image\` tool to analyze them.\n` +
@@ -167,7 +171,13 @@ export class PromptBuilder {
       `If document parsing fails, be explicit about the failure instead of pretending the document was read.`
     )
 
-    // Inject current context (needed when agent creates scheduled tasks)
+    parts.push(
+      `## Scheduled Task Rule\n` +
+      `Persistent scheduled tasks are managed through IPC task files in \`${ipcTasksDir}\`.\n` +
+      `Inspect current scheduled tasks via \`${ipcCurrentTasksPath}\` when needed.\n` +
+      `Do NOT rely on built-in session-only cron/task tools for persistent scheduling.`
+    )
+
     if (context) {
       parts.push(
         `\n## Current Context\n- Agent ID: ${context.agentId}\n- Chat ID: ${context.chatId}\n- IPC Directory: ${ipcTasksDir}`,
@@ -177,9 +187,6 @@ export class PromptBuilder {
     return parts.join('\n\n')
   }
 
-  /**
-   * Load workspace docs.
-   */
   private loadWorkspaceDocs(
     workspaceDir: string,
     replacements: Record<string, string>,
@@ -187,8 +194,7 @@ export class PromptBuilder {
     const loaded: LoadedWorkspaceDoc[] = []
 
     for (const spec of WORKSPACE_FILES) {
-      const filename = spec.filename
-      const filePath = resolve(workspaceDir, filename)
+      const filePath = resolve(workspaceDir, spec.filename)
       if (!existsSync(filePath)) continue
 
       try {
@@ -199,13 +205,13 @@ export class PromptBuilder {
           content = content.replaceAll(`{{${key}}}`, value)
         }
 
-        getLogger().debug({ filename, source: 'workspace' }, 'Prompt file loaded')
-        loaded.push({
-          filePath,
-          content,
-        })
+        getLogger().debug({ filename: spec.filename, source: 'workspace' }, 'Prompt file loaded')
+        loaded.push({ filePath, content })
       } catch (err) {
-        getLogger().warn({ filename, error: err instanceof Error ? err.message : String(err) }, 'Failed to read prompt file')
+        getLogger().warn(
+          { filename: spec.filename, error: err instanceof Error ? err.message : String(err) },
+          'Failed to read prompt file',
+        )
       }
     }
 
@@ -216,24 +222,17 @@ export class PromptBuilder {
     return `${agentId}:${chatId}`
   }
 
-  /**
-   * Fall back to global prompts/system.md
-   */
   private loadGlobalSystemPrompt(): string | null {
     const systemPath = resolve(getPaths().prompts, 'system.md')
-    if (existsSync(systemPath)) {
-      try {
-        return readFileSync(systemPath, 'utf-8').trim()
-      } catch {
-        return null
-      }
+    if (!existsSync(systemPath)) return null
+
+    try {
+      return readFileSync(systemPath, 'utf-8').trim()
+    } catch {
+      return null
     }
-    return null
   }
 
-  /**
-   * Build environment context (dynamically generated from prompts/env.md template)
-   */
   private buildEnvContext(): string | null {
     const envPath = resolve(getPaths().prompts, 'env.md')
     if (!existsSync(envPath)) return null
@@ -249,6 +248,7 @@ export class PromptBuilder {
       return null
     }
   }
+
   private buildChannelContext(chatId?: string): string | null {
     if (!chatId) return null
 

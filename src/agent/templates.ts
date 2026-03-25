@@ -59,7 +59,7 @@ Priority:
 ## Capabilities
 
 - Access to tools for reading, writing, and executing code
-- Can create, pause, resume, and cancel scheduled tasks via IPC
+- Can list, create, update, pause, resume, and delete scheduled tasks via task MCP tools
 - Can manage persistent memory files
 
 ## Memory
@@ -127,13 +127,12 @@ Use file names like \`1710000000000-abc123.json\`.
 ### Create a scheduled task
 \`\`\`json
 {
-  "type": "schedule_task",
+  "action": "create",
+  "name": "Daily summary",
   "prompt": "The prompt to execute on schedule",
   "schedule_type": "cron",
   "schedule_value": "0 9 * * *",
-  "chatId": "CURRENT_CHAT_ID",
-  "name": "Optional task name",
-  "description": "Optional task description"
+  "chat_id": "CURRENT_CHAT_ID"
 }
 \`\`\`
 
@@ -144,9 +143,10 @@ Use file names like \`1710000000000-abc123.json\`.
 
 ### Pause, resume, or cancel
 \`\`\`json
-{ "type": "pause_task", "taskId": "task-xxx" }
-{ "type": "resume_task", "taskId": "task-xxx" }
-{ "type": "cancel_task", "taskId": "task-xxx" }
+{ "action": "update", "name": "Daily summary", "chat_id": "CURRENT_CHAT_ID", "prompt": "new prompt", "schedule_type": "cron", "schedule_value": "0 10 * * *" }
+{ "action": "pause", "name": "Daily summary", "chat_id": "CURRENT_CHAT_ID" }
+{ "action": "resume", "name": "Daily summary", "chat_id": "CURRENT_CHAT_ID" }
+{ "action": "delete", "name": "Daily summary", "chat_id": "CURRENT_CHAT_ID" }
 \`\`\`
 
 Read \`{{ipcCurrentTasksPath}}\` to inspect current scheduled tasks.

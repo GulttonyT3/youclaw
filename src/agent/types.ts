@@ -21,7 +21,7 @@ export interface ProcessParams {
   prompt: string
   agentId: string
   requestedSkills?: string[]
-  browserProfileId?: string
+  browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
 }
 

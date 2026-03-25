@@ -109,6 +109,8 @@
 
     "@google/genai": ["@google/genai@1.46.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-ewPMN5JkKfgU5/kdco9ZhXBHDPhVqZpMQqIFQhwsHLf8kyZfx1cNpw1pHo1eV6PGEW7EhIBFi3aYZraFndAXqg=="],
 
+    "@cedrugs/pdf-parse": ["@cedrugs/pdf-parse@1.0.0", "https://registry.npmmirror.com/@cedrugs/pdf-parse/-/pdf-parse-1.0.0.tgz", { "dependencies": { "debug": "^3.1.0", "node-ensure": "^0.0.0" } }, "sha512-lu+4Hvrkzq725+XPqq/sTGjJ3+/z81b9af8mf8qgLa5CdkkheeZ0fgnlNTxlBZApQYUhOZJrXzqZXUYTMDQjlQ=="],
+
     "@grammyjs/types": ["@grammyjs/types@3.25.0", "", {}, "sha512-iN9i5p+8ZOu9OMxWNcguojQfz4K/PDyMPOnL7PPCON+SoA/F8OKMH3uR7CVUkYfdNe0GCz8QOzAWrnqusQYFOg=="],
 
     "@larksuiteoapi/node-sdk": ["@larksuiteoapi/node-sdk@1.59.0", "", { "dependencies": { "axios": "~1.13.3", "lodash.identity": "^3.0.0", "lodash.merge": "^4.6.2", "lodash.pickby": "^4.6.0", "protobufjs": "^7.2.6", "qs": "^6.14.2", "ws": "^8.19.0" } }, "sha512-sBpkruTvZDOxnVtoTbepWKRX0j1Y1ZElQYu0x7+v088sI9pcpbVp6ZzCGn62dhrKPatzNyCJyzYCPXPYQWccrA=="],
