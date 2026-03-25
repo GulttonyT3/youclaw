@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, cpSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import { getLegacyWorkspaceRoot, getPaths } from '../config/index.ts'
+import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { inferChannelType } from '../channel/config-schema.ts'
 import type { EventBus } from '../events/index.ts'
@@ -58,7 +58,6 @@ export class AgentManager {
   ensureDefaultAgent(): void {
     const logger = getLogger()
     const paths = getPaths()
-    this.migrateLegacyAgentWorkspaces()
     const defaultDir = resolve(paths.agents, 'default')
     const globalDir = resolve(paths.agents, '_global')
 
@@ -76,64 +75,6 @@ export class AgentManager {
     if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
       mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
       writeFileSync(resolve(globalDir, 'memory', 'MEMORY.md'), GLOBAL_MEMORY_MD)
-    }
-  }
-
-  private migrateLegacyAgentWorkspaces(): void {
-    const logger = getLogger()
-    const paths = getPaths()
-    const candidates = [
-      resolve(paths.data, 'agents'),
-      resolve(getLegacyWorkspaceRoot(), 'agents'),
-      resolve(paths.root, 'agents'),
-    ]
-      .filter((dir, index, all) => all.indexOf(dir) === index)
-      .filter((dir) => dir !== paths.agents && existsSync(dir))
-
-    if (candidates.length === 0) return
-
-    mkdirSync(paths.agents, { recursive: true })
-    const migrated: string[] = []
-
-    for (const candidate of candidates) {
-      let entries: string[]
-      try {
-        entries = readdirSync(candidate)
-      } catch {
-        continue
-      }
-
-      for (const entry of entries) {
-        const sourceDir = resolve(candidate, entry)
-        const targetDir = resolve(paths.agents, entry)
-
-        try {
-          if (!statSync(sourceDir).isDirectory()) continue
-        } catch {
-          continue
-        }
-
-        if (existsSync(targetDir)) continue
-
-        const hasAgentConfig = existsSync(resolve(sourceDir, 'agent.yaml'))
-        const isGlobalMemory = entry === '_global' && existsSync(resolve(sourceDir, 'memory', 'MEMORY.md'))
-        if (!hasAgentConfig && !isGlobalMemory) continue
-
-        try {
-          cpSync(sourceDir, targetDir, { recursive: true, force: false })
-          migrated.push(entry)
-        } catch (err) {
-          logger.warn({
-            sourceDir,
-            targetDir,
-            error: err instanceof Error ? err.message : String(err),
-          }, 'Failed to migrate legacy agent workspace')
-        }
-      }
-    }
-
-    if (migrated.length > 0) {
-      logger.info({ agents: migrated, target: paths.agents }, 'Migrated legacy agent workspaces to app data workspace')
     }
   }
 

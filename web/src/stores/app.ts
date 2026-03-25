@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { getItem, removeItem, setItem } from '@/lib/storage'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { createStateStorage } from '@/lib/storage'
 import { applyThemeToDOM, type Theme } from '@/hooks/useTheme'
 import {
   checkEnv,
@@ -25,6 +26,12 @@ import { resolvePreferredRegistrySource } from '@/lib/registry-source'
 
 export type CloseAction = '' | 'minimize' | 'quit'
 type GlobalBubbleType = 'success' | 'error'
+
+const APP_PREFERENCES_STORAGE_KEY = 'youclaw-app-preferences'
+
+function detectDefaultLocale(): Locale {
+  return navigator.language.startsWith('zh') ? 'zh' : 'en'
+}
 
 interface GlobalBubbleState {
   id: number
@@ -67,6 +74,9 @@ interface AppState {
 
   locale: Locale
   setLocale: (locale: Locale) => void
+
+  lastAgentId: string
+  setLastAgentId: (agentId: string) => void
 
   closeAction: CloseAction
   setCloseAction: (closeAction: CloseAction) => Promise<void>
@@ -116,43 +126,34 @@ interface AppState {
 
 let nextGlobalBubbleId = 0
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()(persist((set, get) => ({
   theme: 'system',
   setTheme: (theme) => {
     set({ theme })
     applyThemeToDOM(theme)
-    void setItem('theme', theme)
   },
 
-  locale: 'en',
+  locale: detectDefaultLocale(),
   setLocale: (locale) => {
     set({ locale })
-    void setItem('locale', locale)
   },
 
+  lastAgentId: 'default',
+  setLastAgentId: (lastAgentId) => set({ lastAgentId }),
+
   closeAction: '',
-  setCloseAction: async (closeAction) => {
-    set({ closeAction })
-    if (closeAction) {
-      await setItem('close_action', closeAction)
-      return
-    }
-    await removeItem('close_action')
-  },
+  setCloseAction: async (closeAction) => { set({ closeAction }) },
 
   sidebarCollapsed: false,
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed
     set({ sidebarCollapsed: next })
-    void setItem('sidebar-collapsed', String(next))
   },
   collapseSidebar: () => {
     set({ sidebarCollapsed: true })
-    void setItem('sidebar-collapsed', 'true')
   },
   expandSidebar: () => {
     set({ sidebarCollapsed: false })
-    void setItem('sidebar-collapsed', 'false')
   },
 
   cloudEnabled: false,
@@ -347,21 +348,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hydrate: async () => {
-    const [theme, locale, closeAction, sidebar] = await Promise.all([
-      getItem('theme'),
-      getItem('locale'),
-      getItem('close_action'),
-      getItem('sidebar-collapsed'),
-    ])
-    const resolvedTheme = (theme as Theme) ?? 'system'
-    const resolvedLocale = (locale as Locale) ?? (navigator.language.startsWith('zh') ? 'zh' : 'en')
-    set({
-      theme: resolvedTheme,
-      locale: resolvedLocale,
-      closeAction: closeAction === 'minimize' || closeAction === 'quit' ? closeAction : '',
-      sidebarCollapsed: sidebar === 'true',
-    })
-    applyThemeToDOM(resolvedTheme)
+    await useAppStore.persist.rehydrate()
+    applyThemeToDOM(get().theme)
 
     await get().recheckEnv()
 
@@ -375,7 +363,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         cloudEnabled: enabled,
         registrySources,
-        registrySource: resolvePreferredRegistrySource(registrySources, settings.defaultRegistrySource, resolvedLocale),
+        registrySource: resolvePreferredRegistrySource(registrySources, settings.defaultRegistrySource, get().locale),
       })
 
       if (enabled) {
@@ -403,4 +391,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Backend not ready, ignore
     }
   },
+}), {
+  name: APP_PREFERENCES_STORAGE_KEY,
+  storage: createJSONStorage(() => createStateStorage()),
+  skipHydration: true,
+  partialize: (state) => ({
+    theme: state.theme,
+    locale: state.locale,
+    lastAgentId: state.lastAgentId,
+    closeAction: state.closeAction,
+    sidebarCollapsed: state.sidebarCollapsed,
+  }),
 }))

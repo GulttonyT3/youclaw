@@ -37,6 +37,14 @@ interface SkillDetailViewProps {
   onToggleSkill: (skillName: string, enabled: boolean) => Promise<void>
 }
 
+function getSourceUrl(skill: Skill): string | null {
+  const registryMeta = skill.registryMeta
+  if (!registryMeta || !('sourceUrl' in registryMeta)) {
+    return null
+  }
+  return registryMeta.sourceUrl
+}
+
 export function SkillDetailView({
   skill,
   managedSkill,
@@ -48,6 +56,7 @@ export function SkillDetailView({
   const { t } = useI18n()
   const showEditButton = Boolean(managedSkill?.editable && onEditSkill)
   const showDeleteButton = !managedSkill?.editable && skill.source !== 'workspace'
+  const sourceUrl = getSourceUrl(skill)
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -155,18 +164,18 @@ export function SkillDetailView({
 
       <div className="grid gap-4">
         {skill.frontmatter.version && <InfoRow label={t.skills.version} value={skill.frontmatter.version} />}
-        {skill.registryMeta?.sourceUrl && (
+        {sourceUrl && (
           <InfoRow
             label={t.skills.sourceUrlLabel}
             value={(
               <a
-                href={skill.registryMeta.sourceUrl}
+                href={sourceUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex max-w-full items-start gap-1.5 text-right text-xs text-primary hover:underline break-all"
               >
                 <Link className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>{skill.registryMeta.sourceUrl}</span>
+                <span>{sourceUrl}</span>
               </a>
             )}
           />

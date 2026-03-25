@@ -1,18 +1,29 @@
 import type { ManagedSkill, Skill } from '@/api/client'
 import type { useI18n } from '@/i18n'
 
+function getSkillRegistryMeta(skill: Skill | ManagedSkill) {
+  return 'registryMeta' in skill ? skill.registryMeta : undefined
+}
+
 export function getExternalSkillSourceLabel(skill: Skill | ManagedSkill, t: ReturnType<typeof useI18n>['t']) {
+  const registryMeta = getSkillRegistryMeta(skill)
+
   if (skill.externalSource === 'marketplace') {
-    if (skill.registryMeta?.source === 'clawhub') return t.settings.registrySourceClawhub
-    if (skill.registryMeta?.source === 'tencent') return t.settings.registrySourceTencent
+    if (registryMeta?.source === 'clawhub') return t.settings.registrySourceClawhub
+    if (registryMeta?.source === 'tencent') return t.settings.registrySourceTencent
     return t.skills.sourceMarketplace
   }
 
   if (skill.externalSource === 'imported') {
-    if (skill.registryMeta?.provider === 'raw-url' || skill.registryMeta?.source === 'raw-url') {
+    const importProvider = registryMeta && 'provider' in registryMeta ? registryMeta.provider : null
+    const importSource = registryMeta?.source === 'raw-url' || registryMeta?.source === 'github'
+      ? registryMeta.source
+      : null
+
+    if (importProvider === 'raw-url' || importSource === 'raw-url') {
       return t.skills.sourceRawUrlImport
     }
-    if (skill.registryMeta?.provider === 'github' || skill.registryMeta?.source === 'github') {
+    if (importProvider === 'github' || importSource === 'github') {
       return t.skills.sourceGitHubImport
     }
     return t.skills.sourceImported

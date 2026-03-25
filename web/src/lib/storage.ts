@@ -1,5 +1,6 @@
 // Unified storage layer: Tauri -> Store (settings.json), Web -> localStorage
 
+import type { StateStorage } from 'zustand/middleware'
 import { isTauri } from "@/api/transport"
 
 const STORAGE_PREFIX = "youclaw-"
@@ -44,4 +45,12 @@ export async function removeItem(key: string): Promise<void> {
     return
   }
   localStorage.removeItem(STORAGE_PREFIX + key)
+}
+
+export function createStateStorage(): StateStorage {
+  return {
+    getItem: async (name: string) => getItem(name),
+    setItem: async (name: string, value: string) => setItem(name, value),
+    removeItem: async (name: string) => removeItem(name),
+  }
 }

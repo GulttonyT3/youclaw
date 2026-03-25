@@ -62,7 +62,10 @@ export function MarketplacePanel() {
       const normalizedToken = tokenValue.trim()
       const updated = await updateSettings({
         registrySources: {
-          clawhub: normalizedToken ? { token: normalizedToken } : {},
+          clawhub: {
+            ...settingsState.registrySources.clawhub,
+            token: normalizedToken,
+          },
           tencent: {
             ...settingsState.registrySources.tencent,
           },

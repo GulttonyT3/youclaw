@@ -12,18 +12,17 @@ import {
   getBrowserProfiles,
   type BrowserProfileDTO,
 } from "../api/client";
-import { getItem, setItem } from "@/lib/storage";
 import { ChatContext } from "./chatCtx";
+import { useAppStore } from "@/stores/app";
 import { useChatStore } from "@/stores/chat";
 import { sseManager } from "@/lib/sse-manager";
 import type { ChatItem } from "@/lib/chat-utils";
 
-const LAST_AGENT_KEY = "last-agent-id";
-
 type Agent = { id: string; name: string };
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [agentId, setAgentId] = useState("default");
+  const agentId = useAppStore((s) => s.lastAgentId);
+  const setAgentId = useAppStore((s) => s.setLastAgentId);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [chatList, setChatList] = useState<ChatItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,18 +32,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     null,
   );
-  const [ready, setReady] = useState(false);
 
   const activeChatState = useActiveChatState();
   const actions = useChatActions(agentId);
-
-  // Async load last agentId on startup
-  useEffect(() => {
-    getItem(LAST_AGENT_KEY).then((saved) => {
-      if (saved) setAgentId(saved);
-      setReady(true);
-    });
-  }, []);
 
   // Load agents
   const refreshAgents = useCallback(() => {
@@ -58,9 +48,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             return a.name.localeCompare(b.name);
           });
         setAgents(sorted);
+
+        if (sorted.length === 0) return;
+        if (sorted.some((agent) => agent.id === agentId)) return;
+
+        const fallbackAgentId =
+          sorted.find((agent) => agent.id === "default")?.id ?? sorted[0]!.id;
+        setAgentId(fallbackAgentId);
       })
       .catch(() => {});
-  }, []);
+  }, [agentId, setAgentId]);
 
   useEffect(() => {
     refreshAgents();
@@ -117,11 +114,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sseManager.disconnectSystem();
     };
   }, [refreshChats]);
-
-  // Persist agentId
-  useEffect(() => {
-    if (ready) setItem(LAST_AGENT_KEY, agentId);
-  }, [agentId, ready]);
 
   const deleteChat = useCallback(
     async (chatIdToDelete: string) => {

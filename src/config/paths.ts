@@ -75,12 +75,6 @@ function resolveDataDir(envDataDir: string): string {
   return fallback
 }
 
-export function getLegacyWorkspaceRoot(): string {
-  const home = process.env.HOME || process.env.USERPROFILE
-  if (!home) return resolve(tmpdir(), 'youclaw-workspace')
-  return resolve(home, '.youclaw', 'workspace')
-}
-
 function resolveWorkspaceRoot(dataDir: string): string {
   if (_resolvedWorkspaceRoot) return _resolvedWorkspaceRoot
 
@@ -103,12 +97,6 @@ function resolveWorkspaceRoot(dataDir: string): string {
   const fallback = resolve(dataDir, 'workspace')
   _resolvedWorkspaceRoot = fallback
   return fallback
-}
-
-export function getLegacyUserSkillsDir(): string {
-  const home = process.env.HOME || process.env.USERPROFILE
-  if (!home) return resolve(tmpdir(), 'youclaw-skills')
-  return resolve(home, '.youclaw', 'skills')
 }
 
 export function resetPathsCache(): void {

@@ -467,7 +467,7 @@ export const Attachment = ({
 // AttachmentPreview - Media preview
 // ============================================================================
 
-export type AttachmentPreviewProps = HTMLAttributes<HTMLDivElement> & {
+export type AttachmentPreviewProps = HTMLAttributes<HTMLElement> & {
   fallbackIcon?: ReactNode;
 };
 
