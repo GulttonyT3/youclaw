@@ -80,14 +80,14 @@ export function getPaths() {
   // DATA_DIR: writable data directory (database, logs, browser profiles, etc.)
   const dataDir = resolveDataDir(env.DATA_DIR)
 
-  // RESOURCES_DIR: read-only resource directory from Tauri bundle (agents/skills/prompts templates)
+  // RESOURCES_DIR: read-only resource directory from Tauri bundle (skills/prompts and bundled tooling)
   // In dev mode, falls back to project root
   const resourcesDir = process.env.RESOURCES_DIR
     ? resolve(process.env.RESOURCES_DIR)
     : ROOT_DIR
 
   // agents directory must be writable (creating agents, writing memory, etc.), stored under DATA_DIR
-  // On first launch, AgentManager copies default templates from resourcesDir
+  // Default agent files are created from built-in templates on first launch
   const agentsDir = isBunCompiled
     ? resolve(dataDir, 'agents')
     : resolve(ROOT_DIR, 'agents')
