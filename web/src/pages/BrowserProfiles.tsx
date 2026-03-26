@@ -201,27 +201,29 @@ function BrowserGuideCard() {
   const { t } = useI18n()
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-border bg-background/70 p-5">
-        <h2 className="text-lg font-semibold">{t.browser.guideTitle}</h2>
-        <p className="mt-2 text-sm text-muted-foreground leading-6">{t.browser.guideSummary}</p>
+    <div className="space-y-4 overflow-hidden">
+      <div className="rounded-2xl border border-border bg-background/70 p-5 sm:p-6">
+        <h2 className="text-lg font-semibold leading-tight sm:text-xl">{t.browser.guideTitle}</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground break-words">
+          {t.browser.guideSummary}
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
         <DriverGuideCard title={t.browser.managedTitle} body={t.browser.managedBody} recommended />
         <DriverGuideCard title={t.browser.remoteTitle} body={t.browser.remoteBody} />
         <DriverGuideCard title={t.browser.relayTitle} body={t.browser.relayBody} advanced />
       </div>
 
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/8 p-4 text-sm">
+      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/8 p-4 text-sm sm:p-5">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           <div className="space-y-1.5">
             <p className="font-medium text-foreground">{t.browser.relayStepsTitle}</p>
-            <p className="text-muted-foreground">{t.browser.relayStep1}</p>
-            <p className="text-muted-foreground">{t.browser.relayStep2}</p>
-            <p className="text-muted-foreground">{t.browser.relayStep3}</p>
-            <p className="text-amber-600 dark:text-amber-400">{t.browser.relayWarning}</p>
+            <p className="text-muted-foreground break-words">{t.browser.relayStep1}</p>
+            <p className="text-muted-foreground break-words">{t.browser.relayStep2}</p>
+            <p className="text-muted-foreground break-words">{t.browser.relayStep3}</p>
+            <p className="break-words text-amber-600 dark:text-amber-400">{t.browser.relayWarning}</p>
           </div>
         </div>
       </div>
@@ -241,17 +243,21 @@ function DriverGuideCard({
   advanced?: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/70 p-4">
-      <div className="flex items-center gap-2">
-        <div className="text-sm font-semibold">{title}</div>
+    <div className="h-full min-w-0 rounded-2xl border border-border bg-background/70 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="min-w-0 flex-1 text-base font-semibold leading-tight break-words">{title}</div>
         {recommended && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Recommended</span>
+          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            Recommended
+          </span>
         )}
         {advanced && (
-          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">Advanced</span>
+          <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+            Advanced
+          </span>
         )}
       </div>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{body}</p>
+      <p className="mt-3 text-sm leading-7 text-muted-foreground break-words">{body}</p>
     </div>
   )
 }
