@@ -25,10 +25,10 @@ describe('browser runtime wiring', () => {
   test('prompt builder can explicitly disable all browser usage for a chat', () => {
     const promptBuilder = read('src/agent/prompt-builder.ts')
 
-    expect(promptBuilder).toContain('Browser use is explicitly disabled for this chat.')
+    expect(promptBuilder).toContain('Browser use is explicitly disabled for this request.')
     expect(promptBuilder).toContain('Do NOT use the built-in \\`mcp__browser__*\\` tools.')
     expect(promptBuilder).toContain('Do NOT invoke the legacy \\`agent-browser\\` skill')
-    expect(promptBuilder).toContain('can be enabled by switching this chat from "None" to a browser profile')
+    expect(promptBuilder).toContain('can be enabled by configuring a browser profile for this agent or request')
     expect(promptBuilder).toContain('reply with a short, user-facing explanation')
   })
 
@@ -42,6 +42,6 @@ describe('browser runtime wiring', () => {
     expect(runtime).toContain('getDisabledBrowserToolBlockReason')
     expect(runtime).toContain('const browserDisabledNotice = { sent: false }')
     expect(runtime).toContain('buildDisabledBrowserUserMessage')
-    expect(runtime).toContain('This chat is currently set to "No browser".')
+    expect(runtime).toContain('Browser automation is currently disabled for this request.')
   })
 })

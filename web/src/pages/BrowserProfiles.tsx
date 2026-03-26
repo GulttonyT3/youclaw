@@ -31,8 +31,6 @@ export function BrowserProfiles() {
   const {
     browserProfiles: profiles,
     refreshBrowserProfiles,
-    selectedProfileId,
-    setSelectedProfileId,
   } = useChatContext()
   const drag = useDragRegion()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -54,7 +52,6 @@ export function BrowserProfiles() {
   const handleDelete = async (id: string) => {
     await deleteBrowserProfile(id).catch(() => {})
     if (selectedId === id) setSelectedId(null)
-    if (selectedProfileId === id) setSelectedProfileId(null)
     loadProfiles()
   }
 

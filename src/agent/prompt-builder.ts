@@ -68,11 +68,11 @@ export class PromptBuilder {
     if (context?.browserDisabled) {
       parts.push(
         `## Browser Policy\n` +
-        `Browser use is explicitly disabled for this chat. ` +
+        `Browser use is explicitly disabled for this request. ` +
         `Do NOT use the built-in \`mcp__browser__*\` tools. ` +
         `Do NOT invoke the legacy \`agent-browser\` skill and do NOT run \`agent-browser\` from Bash. ` +
         `Solve the task without browser automation by default. ` +
-        `If web search, WebFetch, or other non-browser methods are blocked by login walls, CAPTCHA, 2FA, device verification, bot checks, or other site verification, stop trying browser tools and reply with a short, user-facing explanation that browser mode is currently off and can be enabled by switching this chat from "None" to a browser profile, then retrying in browser mode.`
+        `If web search, WebFetch, or other non-browser methods are blocked by login walls, CAPTCHA, 2FA, device verification, bot checks, or other site verification, stop trying browser tools and reply with a short, user-facing explanation that browser mode is currently off and can be enabled by configuring a browser profile for this agent or request, then retrying in browser mode.`
       )
     } else if (context?.browserProfileId) {
       const fallbackHint = context.browserProfile?.driver === 'managed' && context.browserProfile.userDataDir

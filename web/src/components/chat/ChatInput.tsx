@@ -27,7 +27,7 @@ import { useChatContext } from "@/hooks/chatCtx";
 import { useI18n } from "@/i18n";
 import { resolveChatAttachments } from "@/lib/chat-attachments";
 import { useAppStore } from "@/stores/app";
-import { Bot, Globe, PlusIcon } from "lucide-react";
+import { Bot, PlusIcon } from "lucide-react";
 
 const MAX_FILES = 10;
 
@@ -82,9 +82,6 @@ export function ChatInput() {
     canChangeAgent,
     setAgentId,
     agents,
-    browserProfiles,
-    selectedProfileId,
-    setSelectedProfileId,
   } = useChatContext();
   const modelReady = useAppStore((s) => s.modelReady);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -117,11 +114,7 @@ export function ChatInput() {
       throw error;
     });
 
-    send(
-      text,
-      selectedProfileId,
-      attachments.length > 0 ? attachments : undefined,
-    );
+    send(text, attachments.length > 0 ? attachments : undefined);
   };
 
   return (
@@ -163,35 +156,6 @@ export function ChatInput() {
                       data-testid={`agent-option-${a.id}`}
                     >
                       {a.name}
-                    </PromptInputSelectItem>
-                  ))}
-                </PromptInputSelectContent>
-              </PromptInputSelect>
-            )}
-            {browserProfiles.length > 0 && (
-              <PromptInputSelect
-                value={selectedProfileId ?? "__none__"}
-                onValueChange={(v) =>
-                  setSelectedProfileId(v === "__none__" ? null : v)
-                }
-              >
-                <PromptInputSelectTrigger
-                  className="h-7 text-xs gap-1"
-                  data-testid="chat-browser-profile-trigger"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  <PromptInputSelectValue />
-                </PromptInputSelectTrigger>
-                <PromptInputSelectContent>
-                  <PromptInputSelectItem
-                    value="__none__"
-                    data-testid="chat-browser-profile-none"
-                  >
-                    {t.chat.noBrowserProfile}
-                  </PromptInputSelectItem>
-                  {browserProfiles.map((p) => (
-                    <PromptInputSelectItem key={p.id} value={p.id}>
-                      {p.name}
                     </PromptInputSelectItem>
                   ))}
                 </PromptInputSelectContent>

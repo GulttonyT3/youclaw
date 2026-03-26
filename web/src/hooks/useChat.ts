@@ -29,12 +29,12 @@ export function useChatProcessing(chatId: string): boolean {
 
 /**
  * Chat actions. selectedAgentId is used for new chats; existing chats use their bound agent.
+ * Browser selection is handled by agent/runtime configuration, not by chat UI.
  */
 export function useChatActions(selectedAgentId: string) {
   const send = useCallback(
     async (
       prompt: string,
-      browserProfileId?: string | null,
       attachments?: Attachment[],
     ) => {
       const store = useChatStore.getState()
@@ -77,7 +77,7 @@ export function useChatActions(selectedAgentId: string) {
           effectiveAgentId,
           prompt,
           effectiveChatId,
-          browserProfileId,
+          undefined,
           attachments,
           messageId,
         )

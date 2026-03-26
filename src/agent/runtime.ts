@@ -1166,7 +1166,7 @@ export class AgentRuntime {
   }
 
   private buildDisabledBrowserUserMessage(reason: string): string {
-    return `This chat is currently set to "No browser". ${reason}`
+    return `Browser automation is currently disabled for this request. ${reason}`
   }
 
   /**

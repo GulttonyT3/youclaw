@@ -30,9 +30,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [browserProfiles, setBrowserProfiles] = useState<BrowserProfileDTO[]>(
     [],
   );
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null,
-  );
   const [ready, setReady] = useState(false);
 
   const activeChatState = useActiveChatState();
@@ -178,8 +175,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         refreshAgents,
         browserProfiles,
         refreshBrowserProfiles,
-        selectedProfileId,
-        setSelectedProfileId,
       }}
     >
       {children}
