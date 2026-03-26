@@ -11,22 +11,19 @@ import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
 import type { HooksManager } from './hooks.ts'
-import { createBuiltinImageTool } from './builtin-mcp.ts'
-import { createMessageTool } from './message-mcp.ts'
-import { buildParsedDocumentsPrompt, createDocumentTools, ingestDocumentAttachments } from './document-mcp.ts'
+import { buildParsedDocumentsPrompt, ingestDocumentAttachments } from './document-mcp.ts'
 import { preprocessAttachments } from './document-converter.ts'
 import { abortRegistry } from './abort-registry.ts'
 import { getAuthToken } from '../routes/auth.ts'
 import { resolvePiModel } from './model-resolver.ts'
 import type { BrowserManager } from '../browser/index.ts'
-import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
 import type { SkillsLoader } from '../skills/loader.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import { buildRecoveredConversationPrompt, resolveStoredSessionFile, type StoredSessionEntry } from './context-utils.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
 import { clearBootstrapSnapshotOnSessionRollover } from './bootstrap-cache.ts'
 import type { SecretsManager } from './secrets.ts'
-import { createExternalMcpToolRuntime } from './mcp-tools.ts'
+import { buildRuntimeCustomTools, filterConfiguredTools } from './runtime-tools.ts'
 import { resolveRuntimeModelConfig } from './runtime-model.ts'
 
 const COMPACTION_MEMORY_INSTRUCTIONS = [
@@ -361,14 +358,17 @@ export class AgentRuntime {
       ? SessionManager.open(existingSessionFile, sessionsDir)
       : SessionManager.create(cwd, sessionsDir)
 
-    const tools = this.filterConfiguredTools(createCodingTools(cwd))
-    const customToolRuntime = await this.buildCustomTools(
+    const tools = filterConfiguredTools(createCodingTools(cwd), this.config)
+    const customToolRuntime = await buildRuntimeCustomTools({
+      config: this.config,
+      browserManager: this.browserManager,
+      secretsManager: this.secretsManager,
       chatId,
       agentId,
-      effectiveBrowserProfileId,
-      tools.map((tool) => tool.name),
-    )
-    const customTools = this.filterConfiguredTools(customToolRuntime.tools)
+      browserProfileId: effectiveBrowserProfileId,
+      reservedToolNames: tools.map((tool) => tool.name),
+    })
+    const customTools = filterConfiguredTools(customToolRuntime.tools, this.config)
     let modelRound = 0
     const pendingModelCalls: Array<{ round: number; startedAt: number }> = []
     const resourceLoader = new DefaultResourceLoader({
@@ -830,75 +830,6 @@ export class AgentRuntime {
     }
 
     return `${prompt}\n\n${parts.join('\n\n')}`.trim()
-  }
-
-  private async buildCustomTools(
-    chatId: string,
-    agentId: string,
-    browserProfileId?: string,
-    reservedToolNames?: string[],
-  ): Promise<{
-    tools: ToolDefinition[]
-    dispose: () => Promise<void>
-  }> {
-    const customTools: ToolDefinition[] = [
-      createBuiltinImageTool(),
-      createMessageTool(chatId),
-      ...createDocumentTools(chatId),
-    ]
-    let externalMcpDispose: (() => Promise<void>) | undefined
-
-    if (this.browserManager && browserProfileId) {
-      const browserTools = createBrowserMcpServer({
-        browserManager: this.browserManager,
-        chatId,
-        agentId,
-        profileId: browserProfileId,
-      })
-      customTools.push(...browserTools)
-      logBrowserToolRegistration(browserProfileId)
-    }
-
-    if (this.config.mcpServers) {
-      const resolvedServers = this.secretsManager
-        ? this.secretsManager.injectToMcpEnv(agentId, this.config.mcpServers)
-        : this.config.mcpServers
-      const mcpRuntime = await createExternalMcpToolRuntime({
-        servers: resolvedServers,
-        reservedToolNames: [...(reservedToolNames ?? []), ...customTools.map((tool) => tool.name)],
-      })
-      customTools.push(...mcpRuntime.tools)
-      externalMcpDispose = mcpRuntime.dispose
-    }
-
-    return {
-      tools: customTools,
-      dispose: async () => {
-        await externalMcpDispose?.()
-      },
-    }
-  }
-
-  private filterConfiguredTools<T extends { name: string }>(tools: T[]): T[] {
-    const allowedTools = this.config.allowedTools
-      ? new Set(this.config.allowedTools.map((name) => this.normalizeToolName(name)))
-      : null
-    const disallowedTools = new Set((this.config.disallowedTools ?? []).map((name) => this.normalizeToolName(name)))
-
-    return tools.filter((tool) => {
-      const normalized = this.normalizeToolName(tool.name)
-      if (disallowedTools.has(normalized)) {
-        return false
-      }
-      if (allowedTools && !allowedTools.has(normalized)) {
-        return false
-      }
-      return true
-    })
-  }
-
-  private normalizeToolName(name: string): string {
-    return name.trim().toLowerCase()
   }
 
   private collectPromptImages(

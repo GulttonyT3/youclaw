@@ -12,6 +12,7 @@ import { loadEnv } from '../src/config/env.ts'
 import { initLogger } from '../src/logger/index.ts'
 import { tmpdir } from 'node:os'
 import { clearAllBootstrapSnapshots } from '../src/agent/bootstrap-cache.ts'
+import { DEFAULT_AGENTS_MD } from '../src/agent/templates.ts'
 
 const systemPromptPath = resolve(import.meta.dir, '../prompts/system.md')
 const content = readFileSync(systemPromptPath, 'utf-8')
@@ -52,6 +53,16 @@ describe('system.md — task MCP documentation', () => {
     expect(content).not.toContain('"type": "schedule_task"')
     expect(content).not.toContain('current_tasks.json')
     expect(content).not.toContain('./data/ipc/')
+  })
+})
+
+describe('DEFAULT_AGENTS_MD — scheduled task guidance', () => {
+  test('uses task MCP documentation instead of legacy IPC guidance', () => {
+    expect(DEFAULT_AGENTS_MD).toContain('mcp__task__list_tasks')
+    expect(DEFAULT_AGENTS_MD).toContain('mcp__task__update_task')
+    expect(DEFAULT_AGENTS_MD).not.toContain('current_tasks.json')
+    expect(DEFAULT_AGENTS_MD).not.toContain('"type": "schedule_task"')
+    expect(DEFAULT_AGENTS_MD).not.toContain('Write JSON files to')
   })
 })
 
@@ -113,6 +124,24 @@ describe('PromptBuilder channel context', () => {
     expect(prompt).toContain('<available_skills>')
     expect(prompt).toContain('<memory>')
     expect(prompt).toContain('retrieved hit')
+  })
+
+  test('uses task MCP guidance instead of IPC task file guidance', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'default',
+        chatId: 'web:chat-1',
+      },
+    )
+
+    expect(prompt).toContain('mcp__task__list_tasks')
+    expect(prompt).toContain('mcp__task__update_task')
+    expect(prompt).not.toContain('current_tasks.json')
+    expect(prompt).not.toContain('Persistent scheduled tasks are managed through IPC task files')
+    expect(prompt).not.toContain('IPC Directory:')
   })
 })
 

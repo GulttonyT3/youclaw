@@ -60,8 +60,6 @@ export class PromptBuilder {
     const agentMemoryPath = resolve(workspaceDir, 'MEMORY.md')
     const globalMemoryPath = resolve(getPaths().agents, '_global', 'memory', 'MEMORY.md')
     const agentId = context?.agentId ?? 'default'
-    const ipcTasksDir = resolve(getPaths().data, 'ipc', agentId, 'tasks')
-    const ipcCurrentTasksPath = resolve(getPaths().data, 'ipc', agentId, 'current_tasks.json')
 
     const workspaceDocs = context?.chatId
       ? getOrLoadBootstrapDocs({
@@ -70,16 +68,12 @@ export class PromptBuilder {
             agentMemoryDir,
             agentMemoryPath,
             globalMemoryPath,
-            ipcTasksDir,
-            ipcCurrentTasksPath,
           }),
         })
       : this.loadWorkspaceDocs(workspaceDir, {
           agentMemoryDir,
           agentMemoryPath,
           globalMemoryPath,
-          ipcTasksDir,
-          ipcCurrentTasksPath,
         })
 
     if (workspaceDocs.length > 0) {
@@ -174,14 +168,14 @@ export class PromptBuilder {
 
     parts.push(
       `## Scheduled Task Rule\n` +
-      `Persistent scheduled tasks are managed through IPC task files in \`${ipcTasksDir}\`.\n` +
-      `Inspect current scheduled tasks via \`${ipcCurrentTasksPath}\` when needed.\n` +
-      `Do NOT rely on built-in session-only cron/task tools for persistent scheduling.`
+      `Use \`mcp__task__list_tasks\` and \`mcp__task__update_task\` for persistent scheduled tasks.\n` +
+      `Always call \`mcp__task__list_tasks\` before any \`mcp__task__update_task\` write operation.\n` +
+      `Do NOT rely on built-in session-only cron/task tools or write raw IPC task files manually.`
     )
 
     if (context) {
       parts.push(
-        `\n## Current Context\n- Agent ID: ${context.agentId}\n- Chat ID: ${context.chatId}\n- IPC Directory: ${ipcTasksDir}`,
+        `\n## Current Context\n- Agent ID: ${context.agentId}\n- Chat ID: ${context.chatId}`,
       )
     }
 

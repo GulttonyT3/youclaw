@@ -14,18 +14,10 @@ import { registerChannelOutboundService } from './channel/outbound-service.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { Scheduler } from './scheduler/index.ts'
-import { IpcWatcher } from './ipc/index.ts'
 import { BrowserManager } from './browser/index.ts'
 import { createApp } from './routes/index.ts'
 import { ensureBunRuntime } from './agent/runtime.ts'
 import { resetShellEnvCache } from './utils/shell-env.ts'
-import {
-  TaskServiceError,
-  createScheduledTask,
-  deleteScheduledTaskById,
-  pauseScheduledTaskById,
-  resumeScheduledTaskById,
-} from './task/index.ts'
 
 async function main() {
   // 1. Load environment variables
@@ -178,65 +170,6 @@ async function main() {
   scheduler.start()
   logger.info('Task scheduler started')
 
-  // 15. Create IPC Watcher and start
-  const ipcWatcher = new IpcWatcher({
-    onScheduleTask: (data) => {
-      const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      createScheduledTask({
-        id: taskId,
-        agentId: data.agentId,
-        chatId: data.chatId,
-        prompt: data.prompt,
-        scheduleType: data.scheduleType as 'cron' | 'interval' | 'once',
-        scheduleValue: data.scheduleValue,
-        name: data.name,
-        description: data.description,
-        timezone: data.timezone,
-        deliveryMode: data.deliveryMode as 'push' | 'none' | undefined,
-        deliveryTarget: data.deliveryTarget,
-      })
-      logger.info({ taskId, agentId: data.agentId, scheduleType: data.scheduleType }, 'IPC: scheduled task created')
-    },
-    onPauseTask: (taskId) => {
-      try {
-        pauseScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task paused')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: pause failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-    onResumeTask: (taskId) => {
-      try {
-        resumeScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task resumed')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: resume failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-    onCancelTask: (taskId) => {
-      try {
-        deleteScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task cancelled')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: cancel failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-  })
-  ipcWatcher.start()
-  logger.info('IPC Watcher started')
-
   // 16. Startup memory maintenance: log cleanup + snapshot restore
   for (const agentConfig of agentManager.getAgents()) {
     memoryManager.pruneOldLogs(agentConfig.id, 30)
@@ -277,7 +210,6 @@ async function main() {
     await channelManager.disconnectAll()
     await browserManager.shutdown().catch(() => {})
     skillsWatcher.stop()
-    ipcWatcher.stop()
     scheduler.stop()
     server.stop()
     process.exit(0)

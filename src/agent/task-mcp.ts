@@ -1,3 +1,5 @@
+import { Type } from '@mariozechner/pi-ai'
+import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { getLogger } from '../logger/index.ts'
 import { listTasksForAgent, applyTaskAction, TaskServiceError } from '../task/index.ts'
 import type { TaskActionInput, TaskActionResult, TaskListFilters, TaskStatus, TaskWriteAction } from '../task/index.ts'
@@ -48,6 +50,26 @@ export type TaskMcpServer = {
     _registeredTools: Record<string, RegisteredTaskTool>
   }
 }
+
+const ListTasksParams = Type.Object({
+  chat_id: Type.Optional(Type.String({ description: 'Optional chat id to filter tasks for a specific conversation' })),
+  name: Type.Optional(Type.String({ description: 'Optional exact task name filter' })),
+  status: Type.Optional(Type.String({ description: 'Optional status filter: active, paused, or completed' })),
+  limit: Type.Optional(Type.Number({ description: 'Optional maximum number of tasks to return' })),
+})
+
+const UpdateTaskParams = Type.Object({
+  action: Type.String({ description: 'Task action: create, update, pause, resume, or delete' }),
+  name: Type.String({ description: 'Task name used to identify the scheduled task in the current chat' }),
+  chat_id: Type.Optional(Type.String({ description: 'Optional chat id. Defaults to the current chat.' })),
+  prompt: Type.Optional(Type.String({ description: 'Prompt to execute when the task runs' })),
+  description: Type.Optional(Type.String({ description: 'Optional task description' })),
+  schedule_type: Type.Optional(Type.String({ description: 'Schedule type: cron, interval, or once' })),
+  schedule_value: Type.Optional(Type.String({ description: 'Cron expression, interval milliseconds, or future ISO timestamp' })),
+  timezone: Type.Optional(Type.String({ description: 'Optional IANA timezone for cron schedules' })),
+  delivery_mode: Type.Optional(Type.String({ description: 'Optional delivery mode: none or push' })),
+  delivery_target: Type.Optional(Type.String({ description: 'Optional push delivery target' })),
+})
 
 function ensureCreateInput(args: Pick<UpdateTaskArgs, 'prompt' | 'schedule_type' | 'schedule_value'>): string | null {
   if (!args.prompt) return 'create action requires prompt'
@@ -151,4 +173,48 @@ export function createTaskMcpServer(context: TaskToolContext, options?: TaskMcpO
       _registeredTools: registeredTools,
     },
   }
+}
+
+function createJsonTaskTool<T extends Record<string, unknown>>(
+  name: 'list_tasks' | 'update_task',
+  description: string,
+  parameters: ToolDefinition['parameters'],
+  handler: (args: T) => Promise<TaskToolResult>,
+): ToolDefinition {
+  return {
+    name: `mcp__task__${name}`,
+    label: `mcp__task__${name}`,
+    description,
+    parameters,
+    async execute(_toolCallId, args: T) {
+      const result = await handler(args)
+      if (result.isError) {
+        throw new Error(result.content[0]?.text || `Task tool ${name} failed`)
+      }
+      return {
+        content: result.content,
+        details: {},
+      }
+    },
+  }
+}
+
+export function createTaskTools(context: TaskToolContext, options?: TaskMcpOptions): ToolDefinition[] {
+  const server = createTaskMcpServer(context, options)
+  const listTasksHandler = server.instance._registeredTools.list_tasks!.handler
+  const updateTaskHandler = server.instance._registeredTools.update_task!.handler
+  return [
+    createJsonTaskTool(
+      'list_tasks',
+      'List scheduled tasks for the current agent. Always call this before creating, updating, pausing, resuming, or deleting a task.',
+      ListTasksParams,
+      (args) => listTasksHandler(args),
+    ),
+    createJsonTaskTool(
+      'update_task',
+      'Create, update, pause, resume, or delete a scheduled task for the current agent.',
+      UpdateTaskParams,
+      (args) => updateTaskHandler(args),
+    ),
+  ]
 }

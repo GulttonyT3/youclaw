@@ -119,10 +119,12 @@ Ask first:
 
 ## Scheduled Tasks
 
-IMPORTANT: Do NOT use the built-in CronCreate/CronDelete/CronList tools. Those create session-level tasks that expire when the process exits. Instead, always use the IPC file method below for persistent scheduled tasks.
+IMPORTANT: Do NOT use the built-in CronCreate/CronDelete/CronList tools. Those create session-level tasks that expire when the process exits.
 
-Write JSON files to \`{{ipcTasksDir}}\`.
-Use file names like \`1710000000000-abc123.json\`.
+Use task MCP tools instead:
+
+- \`mcp__task__list_tasks\`: list existing tasks (always call this before write operations)
+- \`mcp__task__update_task\`: create/update/pause/resume/delete tasks via the \`action\` field
 
 ### Create a scheduled task
 \`\`\`json
@@ -149,7 +151,7 @@ Use file names like \`1710000000000-abc123.json\`.
 { "action": "delete", "name": "Daily summary", "chat_id": "CURRENT_CHAT_ID" }
 \`\`\`
 
-Read \`{{ipcCurrentTasksPath}}\` to inspect current scheduled tasks.
+Always call \`mcp__task__list_tasks\` before any \`mcp__task__update_task\` write operation to avoid duplicates and mistaken edits.
 Replace \`CURRENT_CHAT_ID\` with the actual chatId from the current conversation context.
 
 ## Make It Yours
