@@ -86,6 +86,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Refresh on active chat change
   const activeChatId = useChatStore((s) => s.activeChatId);
+  const activeChatListItem = activeChatId
+    ? chatList.find((chat) => chat.chat_id === activeChatId) ?? null
+    : null;
+  const currentChatAgentId =
+    activeChatState?.boundAgentId ?? activeChatListItem?.agent_id ?? null;
+  const canChangeAgent = !activeChatId;
   useEffect(() => {
     refreshChats();
   }, [activeChatId, refreshChats]);
@@ -148,6 +154,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     <ChatContext.Provider
       value={{
         chatId: activeChatState?.chatId ?? null,
+        currentChatAgentId,
+        canChangeAgent,
         messages: activeChatState?.messages ?? [],
         timelineItems: activeChatState?.timelineItems ?? [],
         streamingText: activeChatState?.streamingText ?? "",

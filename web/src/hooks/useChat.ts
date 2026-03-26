@@ -28,9 +28,9 @@ export function useChatProcessing(chatId: string): boolean {
 }
 
 /**
- * Chat actions. agentId is captured here so send() matches existing ChatContextType.
+ * Chat actions. selectedAgentId is used for new chats; existing chats use their bound agent.
  */
-export function useChatActions(agentId: string) {
+export function useChatActions(selectedAgentId: string) {
   const send = useCallback(
     async (
       prompt: string,
@@ -40,10 +40,13 @@ export function useChatActions(agentId: string) {
       const store = useChatStore.getState()
       const currentChatId = store.activeChatId
       const effectiveChatId = currentChatId ?? `web:${crypto.randomUUID()}`
+      const existingChat = currentChatId ? store.chats[currentChatId] : null
+      const effectiveAgentId = existingChat?.boundAgentId ?? selectedAgentId
       const messageId = crypto.randomUUID()
 
       // Initialize chat entry in store
       store.initChat(effectiveChatId)
+      store.setChatAgent(effectiveChatId, effectiveAgentId)
       store.setActiveChatId(effectiveChatId)
 
       // Reset SSE error flag for this send
@@ -71,7 +74,7 @@ export function useChatActions(agentId: string) {
 
       try {
         await sendMessage(
-          agentId,
+          effectiveAgentId,
           prompt,
           effectiveChatId,
           browserProfileId,
@@ -96,12 +99,15 @@ export function useChatActions(agentId: string) {
         }
       }
     },
-    [agentId],
+    [selectedAgentId],
   )
 
-  const loadChat = useCallback(async (chatId: string) => {
+  const loadChat = useCallback(async (chatId: string, agentId?: string) => {
     const store = useChatStore.getState()
     store.initChat(chatId)
+    if (agentId) {
+      store.setChatAgent(chatId, agentId)
+    }
     store.setActiveChatId(chatId)
 
     const existing = store.chats[chatId]

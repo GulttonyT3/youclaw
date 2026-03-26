@@ -78,6 +78,8 @@ export function ChatInput() {
     chatStatus,
     stop,
     agentId,
+    currentChatAgentId,
+    canChangeAgent,
     setAgentId,
     agents,
     browserProfiles,
@@ -86,6 +88,7 @@ export function ChatInput() {
   } = useChatContext();
   const modelReady = useAppStore((s) => s.modelReady);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const effectiveAgentId = currentChatAgentId ?? agentId;
 
   useEffect(() => {
     if (chatStatus === "submitted" || chatStatus === "streaming") return;
@@ -139,10 +142,15 @@ export function ChatInput() {
           <PromptInputTools>
             <AddAttachmentButton />
             {agents.length > 1 && (
-              <PromptInputSelect value={agentId} onValueChange={setAgentId}>
+              <PromptInputSelect
+                value={effectiveAgentId}
+                onValueChange={setAgentId}
+                disabled={!canChangeAgent}
+              >
                 <PromptInputSelectTrigger
                   className="h-7 text-xs gap-1"
                   data-testid="agent-selector"
+                  disabled={!canChangeAgent}
                 >
                   <Bot className="h-3.5 w-3.5" />
                   <PromptInputSelectValue />
