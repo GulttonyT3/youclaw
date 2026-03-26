@@ -16,6 +16,7 @@ import { useTheme } from './hooks/useTheme'
 import { useAppRuntimeStore } from './stores/app'
 import { getTauriInvoke, isTauri, updateCachedBaseUrl } from './api/transport'
 import { saveAuthToken } from './api/client'
+import { getErrorMessage, logAuthClientEvent, maskToken, sanitizeDeepLink } from './lib/auth-debug'
 
 function AuthGuard() {
   const isLoggedIn = useAppRuntimeStore((s) => s.isLoggedIn)
@@ -105,29 +106,57 @@ export default function App() {
       for (let attempt = 0; attempt < 60; attempt += 1) {
         try {
           await saveAuthToken(token)
+          if (attempt > 0) {
+            void logAuthClientEvent('info', 'Persisted auth token after retry', {
+              attempt: attempt + 1,
+              tokenLength: token.length,
+              tokenPreview: maskToken(token),
+            })
+          }
           return
         } catch (err) {
           lastError = err
           await delay(500)
         }
       }
+      void logAuthClientEvent('error', 'Failed to persist auth token after retries', {
+        attempts: 60,
+        error: getErrorMessage(lastError),
+        tokenLength: token.length,
+        tokenPreview: maskToken(token),
+      })
       throw lastError ?? new Error('Failed to persist auth token from deep link')
     }
 
     const handleDeepLink = async (rawUrl: string) => {
       const normalizedUrl = normalizeDeepLink(rawUrl)
+      const sanitizedUrl = sanitizeDeepLink(rawUrl)
+
+      void logAuthClientEvent('info', 'Deep link received in frontend', {
+        rawUrl: sanitizedUrl,
+        normalizedUrl: sanitizeDeepLink(normalizedUrl),
+      })
+
       if (!normalizedUrl || inFlightUrls.has(normalizedUrl)) return
       inFlightUrls.add(normalizedUrl)
 
       let url: URL
       try {
         url = new URL(normalizedUrl)
-      } catch {
+      } catch (err) {
+        void logAuthClientEvent('warn', 'Failed to parse deep link URL in frontend', {
+          rawUrl: sanitizedUrl,
+          error: getErrorMessage(err),
+        })
         inFlightUrls.delete(normalizedUrl)
         return
       }
 
       if (url.protocol !== 'youclaw:') {
+        void logAuthClientEvent('warn', 'Ignoring deep link with unexpected protocol', {
+          rawUrl: sanitizedUrl,
+          protocol: url.protocol,
+        })
         inFlightUrls.delete(normalizedUrl)
         return
       }
@@ -136,16 +165,45 @@ export default function App() {
       const route = rawRoute.replace(/^\/+/, '')
       const token = url.searchParams.get('token')
 
+      void logAuthClientEvent('info', 'Deep link parsed in frontend', {
+        route,
+        rawUrl: sanitizedUrl,
+        hasToken: !!token,
+        tokenLength: token?.length ?? 0,
+        tokenPreview: maskToken(token),
+      })
+
       if (route === 'auth/callback') {
         if (!token) {
+          void logAuthClientEvent('warn', 'Auth callback deep link missing token', {
+            route,
+            rawUrl: sanitizedUrl,
+          })
           inFlightUrls.delete(normalizedUrl)
           return
         }
         try {
           await persistAuthTokenWithRetry(token)
+          await logAuthClientEvent('info', 'Auth token persisted from deep link', {
+            route,
+            rawUrl: sanitizedUrl,
+            tokenLength: token.length,
+            tokenPreview: maskToken(token),
+          })
           await fetchUser()
+          await logAuthClientEvent('info', 'Frontend completed auth user refresh after deep link', {
+            route,
+          })
           await fetchCreditBalance()
         } catch (err) {
+          await logAuthClientEvent('error', 'Failed to complete auth deep-link flow', {
+            route,
+            rawUrl: sanitizedUrl,
+            hasToken: !!token,
+            tokenLength: token.length,
+            tokenPreview: maskToken(token),
+            error: getErrorMessage(err),
+          })
           console.error('Failed to persist auth token from deep link:', err)
         } finally {
           inFlightUrls.delete(normalizedUrl)
@@ -165,7 +223,14 @@ export default function App() {
     const setDeepLinkFrontendReady = async (ready: boolean) => {
       try {
         await invoke('set_deep_link_frontend_ready', { ready })
+        void logAuthClientEvent('info', 'Updated deep-link frontend readiness', {
+          ready,
+        })
       } catch (err) {
+        void logAuthClientEvent('error', 'Failed to update deep-link frontend readiness', {
+          ready,
+          error: getErrorMessage(err),
+        })
         console.error(`Failed to set deep-link frontend readiness to ${ready}:`, err)
       }
     }
@@ -173,10 +238,17 @@ export default function App() {
     const loadPendingDeepLinks = async () => {
       try {
         const urls = await invoke('take_pending_deep_links') as string[]
+        await logAuthClientEvent('info', 'Loaded pending deep links', {
+          count: urls?.length ?? 0,
+          urls: (urls ?? []).map((url) => sanitizeDeepLink(url)),
+        })
         for (const url of urls ?? []) {
           await handleDeepLink(url)
         }
       } catch (err) {
+        await logAuthClientEvent('error', 'Failed to load pending deep links', {
+          error: getErrorMessage(err),
+        })
         console.error('Failed to load pending deep links:', err)
       }
     }
@@ -185,6 +257,7 @@ export default function App() {
 
     const initializeDeepLinks = async () => {
       try {
+        await logAuthClientEvent('info', 'Initializing deep-link bridge in frontend')
         const { listen } = await import('@tauri-apps/api/event')
         const stopListening = await listen<string>('deep-link-received', (event) => {
           void handleDeepLink(event.payload)
@@ -199,6 +272,9 @@ export default function App() {
         await setDeepLinkFrontendReady(true)
         await loadPendingDeepLinks()
       } catch (err) {
+        await logAuthClientEvent('error', 'Failed to initialize deep-link bridge', {
+          error: getErrorMessage(err),
+        })
         console.error('Failed to initialize deep-link bridge:', err)
       }
     }

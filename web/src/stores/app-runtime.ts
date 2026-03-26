@@ -20,6 +20,7 @@ import {
 } from '@/api/client'
 import { isTauri, openExternal } from '@/api/transport'
 import { resolvePreferredRegistrySource } from '@/lib/registry-source'
+import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
 import { useAppPreferencesStore } from './app-preferences'
 
@@ -90,12 +91,27 @@ async function ensureWindowsDeepLinkRegistration(): Promise<void> {
   if (!isTauri || !navigator.userAgent.includes('Windows')) return
 
   try {
+    await logAuthClientEvent('info', 'Checking Windows deep-link registration', {
+      platform: 'windows',
+      scheme: 'youclaw',
+    })
     const { isRegistered, register } = await import('@tauri-apps/plugin-deep-link')
     const registered = await isRegistered('youclaw')
     if (!registered) {
       await register('youclaw')
+      await logAuthClientEvent('info', 'Windows deep-link protocol registered', {
+        scheme: 'youclaw',
+      })
+      return
     }
+    await logAuthClientEvent('info', 'Windows deep-link protocol already registered', {
+      scheme: 'youclaw',
+    })
   } catch (err) {
+    await logAuthClientEvent('error', 'Failed to verify/register Windows deep-link protocol', {
+      error: getErrorMessage(err),
+      scheme: 'youclaw',
+    })
     console.error('Failed to verify/register deep-link protocol:', err)
   }
 }
@@ -168,8 +184,15 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
       if (!user.avatar) {
         user.avatar = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.name)}`
       }
+      void logAuthClientEvent('info', 'Auth user fetched successfully', {
+        userId: user.id,
+        hasEmail: !!user.email,
+      })
       set({ user, isLoggedIn: true, authLoading: false })
-    } catch {
+    } catch (err) {
+      void logAuthClientEvent('warn', 'Failed to fetch auth user', {
+        error: getErrorMessage(err),
+      })
       set({ user: null, isLoggedIn: false, authLoading: false })
     }
   },
@@ -177,14 +200,23 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
   login: async () => {
     try {
       set({ authLoading: true })
+      await logAuthClientEvent('info', 'Login flow started', {
+        isTauri,
+        isWindows: navigator.userAgent.includes('Windows'),
+      })
 
       const startPolling = () => {
         clearAuthPolling()
+        void logAuthClientEvent('info', 'Started login status polling', {
+          timeoutMs: 120000,
+          intervalMs: 2000,
+        })
         authPollInterval = setInterval(async () => {
           try {
             const { loggedIn } = await getAuthStatus()
             if (loggedIn) {
               clearAuthPolling()
+              void logAuthClientEvent('info', 'Login status polling detected authenticated session')
               await get().fetchUser()
               await get().fetchCreditBalance()
               set({ authLoading: false })
@@ -195,6 +227,9 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
         }, 2000)
         authPollTimeout = setTimeout(() => {
           clearAuthPolling()
+          void logAuthClientEvent('warn', 'Login status polling timed out', {
+            timeoutMs: 120000,
+          })
           set({ authLoading: false })
         }, 120000)
       }
@@ -202,14 +237,25 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
       if (isTauri) {
         await ensureWindowsDeepLinkRegistration()
         const { loginUrl } = await getAuthLoginUrl('tauri')
+        await logAuthClientEvent('info', 'Opening external login URL for desktop auth', {
+          platform: 'tauri',
+          loginUrl,
+        })
         await openExternal(loginUrl)
         startPolling()
       } else {
         const { loginUrl } = await getAuthLoginUrl()
+        await logAuthClientEvent('info', 'Opening external login URL for web auth', {
+          platform: 'web',
+          loginUrl,
+        })
         await openExternal(loginUrl)
         startPolling()
       }
     } catch (err) {
+      await logAuthClientEvent('error', 'Login flow failed before browser redirect', {
+        error: getErrorMessage(err),
+      })
       console.error('Login failed:', err)
       set({ authLoading: false })
     }

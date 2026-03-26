@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
@@ -29,8 +29,18 @@ export function Chat() {
   const isNewChat = !chatId && messages.length === 0;
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isLeavingNewChat, setIsLeavingNewChat] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const prevIsNewChatRef = useRef(isNewChat);
   const drag = useDragRegion();
+  const [composerMetrics, setComposerMetrics] = useState({
+    contentHeight: 0,
+    composerHeight: 0,
+  });
+
+  const currentChat = chatCtx.chatList.find((chat) => chat.chat_id === chatId);
 
   useEffect(() => {
     if (searchOpen) {
@@ -39,6 +49,95 @@ export function Chat() {
       chatCtx.setSearchQuery("");
     }
   }, [searchOpen]);
+
+  useEffect(() => {
+    const wasNewChat = prevIsNewChatRef.current;
+    prevIsNewChatRef.current = isNewChat;
+
+    if (wasNewChat && !isNewChat) {
+      setIsLeavingNewChat(true);
+      const timeoutId = window.setTimeout(() => {
+        setIsLeavingNewChat(false);
+      }, 260);
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    if (isNewChat) {
+      setIsLeavingNewChat(false);
+    }
+  }, [isNewChat]);
+
+  useLayoutEffect(() => {
+    const contentEl = contentRef.current;
+    const composerEl = composerRef.current;
+
+    if (!contentEl || !composerEl) return;
+
+    let frameId = 0;
+
+    const measure = () => {
+      const nextContentHeight = contentEl.clientHeight;
+      const nextComposerHeight = composerEl.offsetHeight;
+      setComposerMetrics((prev) => {
+        if (
+          prev.contentHeight === nextContentHeight &&
+          prev.composerHeight === nextComposerHeight
+        ) {
+          return prev;
+        }
+        return {
+          contentHeight: nextContentHeight,
+          composerHeight: nextComposerHeight,
+        };
+      });
+    };
+
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(measure);
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(() => {
+      scheduleMeasure();
+    });
+
+    observer.observe(contentEl);
+    observer.observe(composerEl);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, []);
+
+  const hasComposerMetrics =
+    composerMetrics.contentHeight > 0 && composerMetrics.composerHeight > 0;
+
+  const composerTop = hasComposerMetrics
+    ? isNewChat
+      ? Math.max(
+          0,
+          Math.round(
+            (composerMetrics.contentHeight - composerMetrics.composerHeight) / 2,
+          ),
+        )
+      : Math.max(
+          0,
+          Math.round(
+            composerMetrics.contentHeight - composerMetrics.composerHeight,
+          ),
+        )
+    : null;
+
+  const composerInset = isNewChat
+    ? 0
+    : hasComposerMetrics
+      ? composerMetrics.composerHeight
+      : 96;
+  const composerDurationClass = isLeavingNewChat ? "duration-[320ms]" : "duration-500";
+  const shouldRenderWelcome = isNewChat || isLeavingNewChat;
 
   const filteredChats = chatCtx.searchQuery
     ? chatCtx.chatList.filter((c) =>
@@ -154,54 +253,70 @@ export function Chat() {
       {/* Right: Chat content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Title bar with drag region */}
-        {!isNewChat && (() => {
-          const currentChat = chatCtx.chatList.find(c => c.chat_id === chatId);
-          return currentChat ? (
-            <div
-              className="h-9 shrink-0 px-4 border-b border-[var(--subtle-border)] flex items-center"
-              {...drag}
-            >
-              <span className="text-sm font-medium truncate text-foreground/80">
-                {currentChat.name}
-              </span>
-            </div>
-          ) : (
-            <div className="h-9 shrink-0" {...drag} />
-          );
-        })()}
-        {isNewChat && <div className="h-9 shrink-0" {...drag} />}
-        {isNewChat ? <ChatWelcome /> : <ChatMessages />}
-
-        {/* ChatInput always rendered, animated from center to bottom */}
         <div
-          className={
-            isNewChat
-              ? "absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 transition-all duration-500 ease-[var(--ease-soft)]"
-              : "relative px-0 transition-all duration-500 ease-[var(--ease-soft)]"
-          }
+          className={cn(
+            "h-9 shrink-0 flex items-center px-4",
+            !isNewChat && currentChat
+              ? "border-b border-[var(--subtle-border)]"
+              : "",
+          )}
+          {...drag}
         >
-          <div className="max-w-3xl mx-auto">
-            {/* Welcome text, fades out after send */}
-            <div
-              className={
-                isNewChat
-                  ? "text-center space-y-4 mb-8 opacity-100 transition-all duration-500 ease-[var(--ease-soft)]"
-                  : "text-center space-y-4 mb-0 opacity-0 h-0 overflow-hidden transition-all duration-500 ease-[var(--ease-soft)]"
-              }
-            >
-              <img
-                src="/icon.svg"
-                alt="YouClaw"
-                className="h-24 w-24 mb-3 mx-auto transition-transform duration-300 ease-out hover:scale-110 hover:rotate-3"
-              />
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {t.chat.welcome}
-              </h1>
-              <p className="text-sm text-muted-foreground/70 max-w-md mx-auto leading-relaxed">
-                {t.chat.startHint}
-              </p>
+          {!isNewChat && currentChat && (
+            <span className="text-sm font-medium truncate text-foreground/80">
+              {currentChat.name}
+            </span>
+          )}
+        </div>
+
+        <div ref={contentRef} className="relative flex-1 min-h-0 overflow-hidden">
+          <div
+            className={cn(
+              "flex h-full min-h-0 flex-col transition-[padding-bottom] ease-[var(--ease-soft)]",
+              composerDurationClass,
+            )}
+            style={{ paddingBottom: `${composerInset}px` }}
+          >
+            {isNewChat ? <ChatWelcome /> : <ChatMessages />}
+          </div>
+
+          <div
+            ref={composerRef}
+            className={cn(
+              "absolute inset-x-0 transition-[top,padding] ease-[var(--ease-soft)]",
+              composerDurationClass,
+              isNewChat ? "px-6" : "px-0",
+            )}
+            style={composerTop === null ? undefined : { top: `${composerTop}px` }}
+          >
+            <div className="max-w-3xl mx-auto relative">
+              {shouldRenderWelcome && (
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 bottom-[calc(100%+2rem)] text-center",
+                    "transition-[opacity,transform] duration-[220ms] ease-[var(--ease-soft)]",
+                    isNewChat
+                      ? "translate-y-0 opacity-100"
+                      : "translate-y-3 opacity-0",
+                  )}
+                >
+                  <div className="mb-3 mx-auto w-fit pointer-events-auto">
+                    <img
+                      src="/icon.svg"
+                      alt="YouClaw"
+                      className="chat-welcome-mascot h-24 w-24"
+                    />
+                  </div>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    {t.chat.welcome}
+                  </h1>
+                  <p className="mt-4 text-sm text-muted-foreground/70 max-w-md mx-auto leading-relaxed">
+                    {t.chat.startHint}
+                  </p>
+                </div>
+              )}
+              <ChatInput />
             </div>
-            <ChatInput />
           </div>
         </div>
       </div>

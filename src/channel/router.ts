@@ -9,6 +9,7 @@ import type { SkillsLoader } from '../skills/index.ts'
 import { injectMessageTimestamp } from '../agent/message-timestamp.ts'
 import { parseSkillInvocations } from '../skills/invoke.ts'
 import type { InboundMessage, Channel } from './types.ts'
+import type { AgentToolUse } from '../events/types.ts'
 
 export class MessageRouter {
   private channels: Channel[] = []
@@ -28,10 +29,15 @@ export class MessageRouter {
     if (skillsLoader) {
       this.skillsLoader = skillsLoader
     }
-    // Subscribe to complete events, auto-send replies to the corresponding channel
     this.eventBus.subscribe({ types: ['complete'] }, (event) => {
       if (event.type === 'complete') {
+        this.persistCompletedReply(event.chatId, event.agentId, event.fullText, event.sessionId, event.turnId, event.toolUse)
         this.handleOutbound(event.chatId, event.fullText)
+      }
+    })
+    this.eventBus.subscribe({ types: ['error'] }, (event) => {
+      if (event.type === 'error') {
+        this.persistErroredReply(event.chatId, event.agentId, event.error, event.errorCode, event.turnId, event.toolUse)
       }
     })
   }
@@ -126,15 +132,17 @@ export class MessageRouter {
         timestamp: message.timestamp,
       })
 
-      const reply = await this.agentQueue.enqueue(
+      await this.agentQueue.enqueue(
         config.id,
         message.chatId,
         contentForModel,
         {
+          turnId: message.id,
           requestedSkills: requestedSkills.length > 0 ? requestedSkills : undefined,
           browserProfileId: message.browserProfileId,
           attachments: message.attachments,
           afterResult: async (result) => {
+            if (!result.trim()) return
             if (!this.memoryManager) return
 
             try {
@@ -161,23 +169,6 @@ export class MessageRouter {
           },
         },
       )
-
-      if (!reply.trim()) {
-        logger.warn({ agentId: config.id, chatId: message.chatId }, 'Agent returned an empty reply, skipping assistant message persistence')
-        return
-      }
-
-      // Store bot reply
-      saveMessage({
-        id: randomUUID(),
-        chatId: message.chatId,
-        sender: 'assistant',
-        senderName: config.name,
-        content: reply,
-        timestamp: new Date().toISOString(),
-        isFromMe: true,
-        isBotMessage: true,
-      })
     } catch (err) {
       logger.error({ error: err, chatId: message.chatId }, 'Message processing failed')
     }
@@ -211,5 +202,79 @@ export class MessageRouter {
         return
       }
     }
+  }
+
+  private persistCompletedReply(
+    chatId: string,
+    agentId: string,
+    fullText: string,
+    sessionId: string,
+    turnId?: string,
+    toolUse?: AgentToolUse[],
+  ): void {
+    if (!turnId || this.hasAssistantMessageForTurn(chatId, turnId)) return
+    const senderName = this.getAgentDisplayName(agentId, chatId)
+
+    saveMessage({
+      id: randomUUID(),
+      chatId,
+      sender: 'assistant',
+      senderName,
+      content: fullText,
+      timestamp: new Date().toISOString(),
+      isFromMe: true,
+      isBotMessage: true,
+      toolUse: toolUse && toolUse.length > 0 ? JSON.stringify(toolUse) : undefined,
+      sessionId: sessionId || undefined,
+      turnId,
+    })
+    upsertChat(chatId, agentId)
+  }
+
+  private persistErroredReply(
+    chatId: string,
+    agentId: string,
+    error: string,
+    errorCode?: string,
+    turnId?: string,
+    toolUse?: AgentToolUse[],
+  ): void {
+    if (!turnId || this.hasAssistantMessageForTurn(chatId, turnId)) return
+    const senderName = this.getAgentDisplayName(agentId, chatId)
+
+    saveMessage({
+      id: randomUUID(),
+      chatId,
+      sender: 'assistant',
+      senderName,
+      content: errorCode === 'INSUFFICIENT_CREDITS' ? '' : `⚠️ ${error}`,
+      timestamp: new Date().toISOString(),
+      isFromMe: true,
+      isBotMessage: true,
+      toolUse: toolUse && toolUse.length > 0 ? JSON.stringify(toolUse) : undefined,
+      turnId,
+      errorCode,
+    })
+    upsertChat(chatId, agentId)
+  }
+
+  private hasAssistantMessageForTurn(chatId: string, turnId: string): boolean {
+    const db = getDatabase()
+    const existing = db.query(
+      'SELECT 1 FROM messages WHERE chat_id = ? AND turn_id = ? AND is_bot_message = 1 LIMIT 1',
+    ).get(chatId, turnId)
+    return !!existing
+  }
+
+  private getAgentDisplayName(agentId: string, chatId: string): string {
+    const direct = 'getAgent' in this.agentManager && typeof this.agentManager.getAgent === 'function'
+      ? this.agentManager.getAgent(agentId)
+      : undefined
+    if (direct?.config.name) return direct.config.name
+
+    const resolved = 'resolveAgent' in this.agentManager && typeof this.agentManager.resolveAgent === 'function'
+      ? this.agentManager.resolveAgent(chatId)
+      : undefined
+    return resolved?.config.name ?? agentId
   }
 }

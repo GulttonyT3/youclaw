@@ -3,12 +3,13 @@ import type { AgentSession, AgentSessionEvent, SessionEntry, ToolDefinition } fr
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { getEnv, getPaths } from '../config/index.ts'
+import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { writeModelInvocationLog } from '../logger/model-invocation.ts'
 import { getMessages, getSessionEntry, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
+import type { AgentToolUse } from '../events/types.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
 import type { HooksManager } from './hooks.ts'
 import { buildParsedDocumentsPrompt, ingestDocumentAttachments } from './document-mcp.ts'
@@ -115,10 +116,10 @@ export class AgentRuntime {
    * Process a user message and return the agent's reply.
    */
   async process(params: ProcessParams): Promise<string> {
-    const { chatId, prompt, agentId } = params
+    const { chatId, prompt, agentId, turnId } = params
     const logger = getLogger()
 
-    this.emitProcessing(agentId, chatId, true)
+    this.emitProcessing(agentId, chatId, true, turnId)
 
     if (this.hooksManager) {
       await this.hooksManager.execute(agentId, 'on_session_start', {
@@ -139,6 +140,7 @@ export class AgentRuntime {
     }, 'Processing message')
 
     const startTime = Date.now()
+    let toolUse: AgentToolUse[] = []
     try {
       let finalPrompt = prompt
       if (this.hooksManager) {
@@ -177,7 +179,7 @@ export class AgentRuntime {
         baseUrl: modelConfig.baseUrl || '(default)',
       }, 'Model config loaded')
 
-      const { fullText, sessionId, sessionFile } = await this.executeQuery(
+      const { fullText, sessionId, sessionFile, aborted, toolUse: collectedToolUse } = await this.executeQuery(
         finalPrompt,
         agentId,
         chatId,
@@ -186,7 +188,9 @@ export class AgentRuntime {
         params.browserProfileId,
         params.requestedSkills,
         params.attachments,
+        turnId,
       )
+      toolUse = collectedToolUse
 
       if (sessionId) {
         clearBootstrapSnapshotOnSessionRollover({
@@ -210,17 +214,21 @@ export class AgentRuntime {
         }
       }
 
-      if (!finalText.trim()) {
+      if (!aborted && !finalText.trim()) {
         throw new Error(buildEmptyAssistantResponseErrorMessage(modelConfig))
       }
 
-      this.eventBus.emit({
-        type: 'complete',
-        agentId,
-        chatId,
-        fullText: finalText,
-        sessionId,
-      })
+      if (!aborted || finalText.trim().length > 0) {
+        this.eventBus.emit({
+          type: 'complete',
+          agentId,
+          chatId,
+          fullText: finalText,
+          sessionId,
+          turnId,
+          toolUse,
+        })
+      }
 
       const durationMs = Date.now() - startTime
       logger.info({ agentId, chatId, sessionId, responseLength: finalText.length, durationMs, category: 'agent' }, 'Message processing completed')
@@ -257,11 +265,13 @@ export class AgentRuntime {
         chatId,
         error: userError,
         errorCode,
+        turnId,
+        toolUse,
       })
 
       return `Error: ${userError}`
     } finally {
-      this.emitProcessing(agentId, chatId, false)
+      this.emitProcessing(agentId, chatId, false, turnId)
     }
   }
 
@@ -277,13 +287,13 @@ export class AgentRuntime {
     browserProfileId?: string | null,
     requestedSkills?: string[],
     attachments?: RuntimeAttachment[],
-  ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null }> {
+    turnId?: string,
+  ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null; aborted: boolean; toolUse: AgentToolUse[] }> {
     const logger = getLogger()
-    const env = getEnv()
     const abortController = new AbortController()
     abortRegistry.register(chatId, abortController)
     const invocationId = randomUUID()
-
+    const toolUse: AgentToolUse[] = []
     const browserDisabled = browserProfileId === null
     const resolvedBrowserProfile = this.browserManager
       ? (browserDisabled
@@ -436,7 +446,7 @@ export class AgentRuntime {
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         this.handleSessionEvent(event, agentId, chatId, (text) => {
           fullText += text
-        }, compactionSummaries, browserDisabled, browserDisabledNotice)
+        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice)
 
         if (event.type === 'turn_end') {
           const current = pendingModelCalls.shift()
@@ -480,7 +490,7 @@ export class AgentRuntime {
       const { parsedDocuments, remainingAttachments } = await ingestDocumentAttachments(
         chatId,
         fileAttachments,
-        (event) => this.emitDocumentStatus(agentId, chatId, event.documentId, event.filename, event.status, event.error),
+        (event) => this.emitDocumentStatus(agentId, chatId, event.documentId, event.filename, event.status, event.error, turnId),
       )
       const promptWithDocuments = parsedDocuments.length > 0
         ? `${promptWithFallback}\n\n${buildParsedDocumentsPrompt(parsedDocuments)}`.trim()
@@ -538,7 +548,13 @@ export class AgentRuntime {
                 },
               })
             }
-            return { fullText, sessionId: finalSessionId, sessionFile: finalSessionFile }
+            return {
+              fullText,
+              sessionId: finalSessionId,
+              sessionFile: finalSessionFile,
+              aborted: true,
+              toolUse,
+            }
           }
           const current = pendingModelCalls[0]
           writeModelInvocationLog({
@@ -591,7 +607,13 @@ export class AgentRuntime {
         category: 'agent',
       }, 'Agent session finished')
 
-      return { fullText, sessionId: finalSessionId, sessionFile: finalSessionFile }
+      return {
+        fullText,
+        sessionId: finalSessionId,
+        sessionFile: finalSessionFile,
+        aborted: false,
+        toolUse,
+      }
     } finally {
       await customToolRuntime.dispose()
       abortRegistry.unregister(chatId)
@@ -607,6 +629,8 @@ export class AgentRuntime {
     chatId: string,
     appendText: (text: string) => void,
     compactionSummaries: CompactionSummary[],
+    toolUseHistory: AgentToolUse[],
+    turnId: string | undefined,
     browserDisabled = false,
     browserDisabledNotice: { sent: boolean } = { sent: false },
   ): void {
@@ -615,7 +639,7 @@ export class AgentRuntime {
         const assistantEvent = event.assistantMessageEvent
         if (assistantEvent.type === 'text_delta') {
           appendText(assistantEvent.delta)
-          this.emitStream(agentId, chatId, assistantEvent.delta)
+          this.emitStream(agentId, chatId, assistantEvent.delta, turnId)
         }
         break
       }
@@ -635,8 +659,15 @@ export class AgentRuntime {
           browserDisabledNotice.sent = true
           const message = this.buildDisabledBrowserUserMessage(disabledBrowserReason)
           appendText(message)
-          this.emitStream(agentId, chatId, message)
+          this.emitStream(agentId, chatId, message, turnId)
         }
+
+        toolUseHistory.push({
+          id: `tool:${turnId ?? 'turnless'}:${toolUseHistory.length + 1}`,
+          name: event.toolName,
+          input: JSON.stringify(event.args).slice(0, 200),
+          status: 'done',
+        })
 
         if (this.hooksManager) {
           this.hooksManager.execute(agentId, 'pre_tool_use', {
@@ -646,14 +677,14 @@ export class AgentRuntime {
             payload: { tool: event.toolName, input: event.args },
           }).then((ctx) => {
             if (ctx.abort) {
-              this.emitStream(agentId, chatId, `\n[Tool ${event.toolName} blocked by hook: ${ctx.abortReason ?? 'unknown reason'}]\n`)
+              this.emitStream(agentId, chatId, `\n[Tool ${event.toolName} blocked by hook: ${ctx.abortReason ?? 'unknown reason'}]\n`, turnId)
             }
           }).catch(() => {
             // Hook errors should not affect main flow.
           })
         }
 
-        this.emitToolUse(agentId, chatId, event.toolName, event.args)
+        this.emitToolUse(agentId, chatId, event.toolName, event.args, turnId)
         break
       }
 
@@ -674,6 +705,9 @@ export class AgentRuntime {
     if (!input || typeof input !== 'object') return null
 
     const payload = input as Record<string, unknown>
+    if (toolName === 'Skill' && payload.skill === 'agent-browser') {
+      return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
+    }
     if (toolName === 'Bash' && typeof payload.command === 'string' && /\bagent-browser\b/.test(payload.command)) {
       return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
     }
@@ -876,21 +910,22 @@ export class AgentRuntime {
       .join('\n')
   }
 
-  private emitProcessing(agentId: string, chatId: string, isProcessing: boolean): void {
-    this.eventBus.emit({ type: 'processing', agentId, chatId, isProcessing })
+  private emitProcessing(agentId: string, chatId: string, isProcessing: boolean, turnId?: string): void {
+    this.eventBus.emit({ type: 'processing', agentId, chatId, isProcessing, turnId })
   }
 
-  private emitStream(agentId: string, chatId: string, text: string): void {
-    this.eventBus.emit({ type: 'stream', agentId, chatId, text })
+  private emitStream(agentId: string, chatId: string, text: string, turnId?: string): void {
+    this.eventBus.emit({ type: 'stream', agentId, chatId, text, turnId })
   }
 
-  private emitToolUse(agentId: string, chatId: string, tool: string, input: unknown): void {
+  private emitToolUse(agentId: string, chatId: string, tool: string, input: unknown, turnId?: string): void {
     this.eventBus.emit({
       type: 'tool_use',
       agentId,
       chatId,
       tool,
       input: JSON.stringify(input).slice(0, 200),
+      turnId,
     })
   }
 
@@ -901,6 +936,7 @@ export class AgentRuntime {
     filename: string,
     status: 'parsing' | 'parsed' | 'failed',
     error?: string,
+    turnId?: string,
   ): void {
     this.eventBus.emit({
       type: 'document_status',
@@ -910,6 +946,7 @@ export class AgentRuntime {
       filename,
       status,
       error,
+      turnId,
     })
   }
 }

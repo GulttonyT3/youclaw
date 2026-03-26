@@ -93,7 +93,18 @@ describe('MessageRouter.handleInbound', () => {
   })
 
   test('auto-parses skill invocations, saves message, and records daily log', async () => {
-    const enqueue = mock(() => Promise.resolve('router reply'))
+    const eventBus = new EventBus()
+    const enqueue = mock(async () => {
+      eventBus.emit({
+        type: 'complete',
+        agentId: 'agent-1',
+        chatId: 'web:chat-1',
+        fullText: 'router reply',
+        sessionId: 'session-1',
+        turnId: 'msg-1',
+      })
+      return 'router reply'
+    })
     const appendDailyLog = mock(() => {})
     const rememberTurn = mock(() => Promise.resolve([]))
     const getUsableSkillNamesForAgent = mock(() => new Set(['pdf', 'agent-browser']))
@@ -102,7 +113,7 @@ describe('MessageRouter.handleInbound', () => {
         resolveAgent: () => createManagedAgent(),
       } as any,
       { enqueue } as any,
-      new EventBus(),
+      eventBus,
       { appendDailyLog, rememberTurn } as any,
       { getUsableSkillNamesForAgent } as any,
     )
@@ -144,6 +155,80 @@ describe('MessageRouter.handleInbound', () => {
     expect(messages.length).toBe(2)
     expect(messages.some((message) => message.content === '/pdf /agent-browser summarize report')).toBe(true)
     expect(messages.some((message) => message.content === 'router reply')).toBe(true)
+  })
+
+  test('persists tool use onto the final assistant message during complete events', async () => {
+    const eventBus = new EventBus()
+    const enqueue = mock(async () => {
+      const messagesAfterComplete = (() => {
+        eventBus.emit({
+          type: 'complete',
+          agentId: 'agent-1',
+          chatId: 'web:chat-1',
+          fullText: 'done',
+          sessionId: 'session-1',
+          turnId: 'msg-1',
+          toolUse: [
+            { id: 'tool:msg-1:1', name: 'Read', input: '{"file_path":"report.md"}', status: 'done' },
+          ],
+        })
+        return getMessages('web:chat-1', 10)
+      })()
+      expect(messagesAfterComplete.some((message) => message.content === 'done')).toBe(true)
+      return 'done'
+    })
+    const router = new MessageRouter(
+      {
+        resolveAgent: () => createManagedAgent(),
+      } as any,
+      { enqueue } as any,
+      eventBus,
+    )
+
+    await router.handleInbound(createMessage())
+
+    const messages = getMessages('web:chat-1', 10)
+    const assistant = messages.find((message) => message.is_bot_message === 1)
+    expect(assistant?.turn_id).toBe('msg-1')
+    expect(assistant?.session_id).toBe('session-1')
+    expect(assistant?.tool_use_json).toContain('"name":"Read"')
+  })
+
+  test('deduplicates repeated complete events for the same turn', async () => {
+    const eventBus = new EventBus()
+    const enqueue = mock(async () => {
+      eventBus.emit({
+        type: 'complete',
+        agentId: 'agent-1',
+        chatId: 'web:chat-1',
+        fullText: 'done',
+        sessionId: 'session-1',
+        turnId: 'msg-1',
+      })
+      eventBus.emit({
+        type: 'complete',
+        agentId: 'agent-1',
+        chatId: 'web:chat-1',
+        fullText: 'done again',
+        sessionId: 'session-2',
+        turnId: 'msg-1',
+      })
+      return 'done'
+    })
+    const router = new MessageRouter(
+      {
+        resolveAgent: () => createManagedAgent(),
+      } as any,
+      { enqueue } as any,
+      eventBus,
+    )
+
+    await router.handleInbound(createMessage())
+
+    const assistantMessages = getMessages('web:chat-1', 10).filter((message) => message.is_bot_message === 1)
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0]?.turn_id).toBe('msg-1')
+    expect(assistantMessages[0]?.content).toBe('done')
   })
 
   test('explicit requestedSkills take priority, prefix is not re-parsed', async () => {

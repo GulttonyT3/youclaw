@@ -47,7 +47,9 @@
     "resources": [
       "../agents/**/*",
       "../skills/**/*",
-      "../prompts/**/*"
+      "../prompts/**/*",
+      "../src/browser/playwright-runner.js",
+      "../node_modules/playwright-core/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "10.15"

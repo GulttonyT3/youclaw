@@ -203,7 +203,7 @@ export function getPaths() {
   const dataDir = resolveDataDir(env.DATA_DIR)
   const workspaceRoot = resolveWorkspaceRoot(dataDir)
 
-  // RESOURCES_DIR: read-only resource directory from Tauri bundle (agents/skills/prompts templates)
+  // RESOURCES_DIR: read-only resource directory from Tauri bundle (skills/prompts and bundled tooling)
   // In dev mode, falls back to project root
   const resourcesDir = process.env.RESOURCES_DIR
     ? resolvePathInput(process.env.RESOURCES_DIR)

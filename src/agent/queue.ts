@@ -5,6 +5,7 @@ interface QueueItem {
   agentId: string
   chatId: string
   prompt: string
+  turnId?: string
   requestedSkills?: string[]
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
@@ -14,6 +15,7 @@ interface QueueItem {
 }
 
 export interface EnqueueOptions {
+  turnId?: string
   requestedSkills?: string[]
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
@@ -50,6 +52,7 @@ export class AgentQueue {
         agentId,
         chatId,
         prompt,
+        turnId: options?.turnId,
         requestedSkills: options?.requestedSkills,
         browserProfileId: options?.browserProfileId,
         attachments: options?.attachments,
@@ -178,6 +181,7 @@ export class AgentQueue {
           chatId: item.chatId,
           prompt: item.prompt,
           agentId: item.agentId,
+          turnId: item.turnId,
           requestedSkills: item.requestedSkills,
           browserProfileId: item.browserProfileId,
           attachments: item.attachments,
