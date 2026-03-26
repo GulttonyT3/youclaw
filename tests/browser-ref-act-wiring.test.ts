@@ -13,7 +13,7 @@ describe('browser ref act wiring', () => {
     const session = read('src/browser/pw-session.ts')
 
     expect(session).toContain("| 'act'")
-    expect(session).toContain("interaction?: RefAction")
+    expect(session).toContain("interaction?: BrowserRefAction")
     expect(session).toContain("action: 'act'")
     expect(session).toContain('export async function actForChat(')
   })

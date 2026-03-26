@@ -6,7 +6,7 @@ import { getLogger } from '../logger/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { AgentConfig } from './types.ts'
-import type { BrowserDriver } from '../browser/index.ts'
+import type { BrowserDriver, BrowserTarget } from '../browser/index.ts'
 
 // Workspace MD file loading order
 const WORKSPACE_FILES = ['SOUL.md', 'USER.md', 'AGENT.md', 'TOOLS.md'] as const
@@ -30,6 +30,7 @@ export class PromptBuilder {
       requestedSkills?: string[]
       browserProfileId?: string
       browserDisabled?: boolean
+      browserTarget?: BrowserTarget
       browserProfile?: {
         id: string
         driver: BrowserDriver
@@ -85,8 +86,10 @@ export class PromptBuilder {
       parts.push(
         `## Browser Tools\n` +
         `This chat is connected to browser profile "${context.browserProfileId}". ` +
+        `Browser tools for this chat are routed to target "${context.browserTarget ?? 'host'}". ` +
         `Prefer the built-in \`mcp__browser__*\` tools for common browser interaction: status, list_tabs, open_tab, navigate, snapshot, act, screenshot, click, type, press_key, and close_tab.\n` +
         `For page interaction, prefer taking a fresh \`snapshot\` first and then using \`act\` with element refs returned by the snapshot. Use raw CSS selector tools only as a fallback when ref-based interaction is insufficient.\n` +
+        `If the current browser target reports that it is not implemented, do not keep retrying the same browser tool calls blindly. Explain the limitation briefly and continue with another approach when possible.\n` +
         `Use the legacy \`agent-browser\` skill only when you need capabilities not yet covered by the built-in browser tools, such as interactive element refs, explicit waits, select/check, get text, PDF export, visual diff, or state import/export.\n` +
         `Manual login is the default and recommended flow for sites that require authentication. Do NOT ask the user for credentials, passwords, 2FA codes, recovery codes, or session secrets. Ask the user to sign in manually in the browser profile instead.\n` +
         `Automated login attempts often trigger anti-bot or account-security defenses. If the site shows CAPTCHA, 2FA, device verification, suspicious-login prompts, or other security checks, stop automated login attempts and ask the user to take over manually.\n` +

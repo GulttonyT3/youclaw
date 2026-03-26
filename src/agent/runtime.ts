@@ -703,6 +703,7 @@ export class AgentRuntime {
     let sessionId = existingSessionId ?? ''
     const toolUse: AgentToolUse[] = []
     const browserDisabled = browserProfileId === null
+    const browserTarget = this.config.browser?.target ?? 'host'
     const resolvedBrowserProfile = this.browserManager
       ? (browserDisabled
           ? null
@@ -720,6 +721,7 @@ export class AgentRuntime {
         requestedSkills,
         browserProfileId: effectiveBrowserProfileId,
         browserDisabled,
+        browserTarget,
         browserProfile: resolvedBrowserProfile
           ? {
               id: resolvedBrowserProfile.id,
@@ -810,8 +812,9 @@ export class AgentRuntime {
         chatId,
         agentId,
         profileId: resolvedBrowserProfile.id,
+        target: browserTarget,
       })
-      logBrowserToolRegistration(resolvedBrowserProfile.id)
+      logBrowserToolRegistration(resolvedBrowserProfile.id, browserTarget)
     }
     mcpServers['task'] = createTaskMcpServer({
       agentId,

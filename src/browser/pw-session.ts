@@ -7,6 +7,7 @@ import type { BrowserManager } from './manager.ts'
 import { getChatBrowserState, upsertChatBrowserState } from './store.ts'
 import { resolveCdpHttpBase } from './chrome.ts'
 import { withNoProxyForCdpUrl } from './cdp-proxy-bypass.ts'
+import type { BrowserRefAction } from './types.ts'
 
 type NodeAction =
   | 'open_tab'
@@ -18,8 +19,6 @@ type NodeAction =
   | 'type'
   | 'press_key'
   | 'close_tab'
-
-type RefAction = 'click' | 'type' | 'select' | 'check' | 'uncheck'
 
 type SnapshotRef = {
   ref: string
@@ -42,7 +41,7 @@ type NodePayload = {
   key?: string
   path?: string
   ref?: string
-  interaction?: RefAction
+  interaction?: BrowserRefAction
   option?: string
 }
 
@@ -228,7 +227,7 @@ export async function actForChat(
     agentId: string
     profileId: string
     ref: string
-    action: RefAction
+    action: BrowserRefAction
     text?: string
     option?: string
   },

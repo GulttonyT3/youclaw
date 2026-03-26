@@ -5,17 +5,8 @@ import { z } from 'zod/v4'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import type { BrowserManager } from './manager.ts'
-import {
-  actForChat,
-  clickForChat,
-  closeTabForChat,
-  navigateForChat,
-  openTabForChat,
-  pressKeyForChat,
-  screenshotForChat,
-  snapshotForChat,
-  typeForChat,
-} from './pw-session.ts'
+import { createBrowserActionRouter } from './router.ts'
+import type { BrowserTarget } from './types.ts'
 
 function createScreenshotPath(chatId: string): string {
   const dir = resolve(getPaths().data, 'browser-artifacts', chatId)
@@ -28,8 +19,16 @@ export function createBrowserMcpServer(params: {
   chatId: string
   agentId: string
   profileId: string
+  target: BrowserTarget
 }) {
-  const { browserManager, chatId, agentId, profileId } = params
+  const { browserManager, chatId, agentId, profileId, target } = params
+  const router = createBrowserActionRouter({
+    browserManager,
+    chatId,
+    agentId,
+    profileId,
+    target,
+  })
 
   return createSdkMcpServer({
     name: 'browser',
@@ -41,12 +40,11 @@ export function createBrowserMcpServer(params: {
         {},
         async () => {
           try {
-            const runtime = await browserManager.getProfileStatus(profileId)
-            const profile = browserManager.getProfile(profileId)
+            const status = await router.getStatus()
             return {
               content: [{
                 type: 'text' as const,
-                text: JSON.stringify({ profile, runtime }, null, 2),
+                text: JSON.stringify(status, null, 2),
               }],
             }
           } catch (err) {
@@ -61,11 +59,11 @@ export function createBrowserMcpServer(params: {
         {},
         async () => {
           try {
-            const tabs = await browserManager.listTabs(profileId)
+            const tabs = await router.listTabs()
             return {
               content: [{
                 type: 'text' as const,
-                text: JSON.stringify({ tabs }, null, 2),
+                text: JSON.stringify(tabs, null, 2),
               }],
             }
           } catch (err) {
@@ -82,7 +80,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await openTabForChat(browserManager, { chatId, agentId, profileId, url: args.url })
+            const result = await router.openTab(args.url)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -98,7 +96,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await navigateForChat(browserManager, { chatId, agentId, profileId, url: args.url })
+            const result = await router.navigate(args.url)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -112,7 +110,7 @@ export function createBrowserMcpServer(params: {
         {},
         async () => {
           try {
-            const snapshot = await snapshotForChat(browserManager, { chatId, agentId, profileId })
+            const snapshot = await router.snapshot()
             return {
               content: [{
                 type: 'text' as const,
@@ -136,10 +134,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await actForChat(browserManager, {
-              chatId,
-              agentId,
-              profileId,
+            const result = await router.act({
               ref: args.ref,
               action: args.action,
               text: args.text,
@@ -161,7 +156,7 @@ export function createBrowserMcpServer(params: {
         async (args) => {
           try {
             const targetPath = args.path || createScreenshotPath(chatId)
-            const result = await screenshotForChat(browserManager, { chatId, agentId, profileId, path: targetPath })
+            const result = await router.screenshot(targetPath)
             return {
               content: [{
                 type: 'text' as const,
@@ -185,7 +180,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await clickForChat(browserManager, { chatId, agentId, profileId, selector: args.selector })
+            const result = await router.click(args.selector)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -202,7 +197,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await typeForChat(browserManager, { chatId, agentId, profileId, selector: args.selector, text: args.text })
+            const result = await router.type(args.selector, args.text)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -218,7 +213,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await pressKeyForChat(browserManager, { chatId, agentId, profileId, key: args.key })
+            const result = await router.pressKey(args.key)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -234,7 +229,7 @@ export function createBrowserMcpServer(params: {
         },
         async (args) => {
           try {
-            const result = await closeTabForChat(browserManager, { chatId, agentId, profileId, url: args.url })
+            const result = await router.closeTab(args.url)
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -246,7 +241,7 @@ export function createBrowserMcpServer(params: {
   })
 }
 
-export function logBrowserToolRegistration(profileId: string): void {
+export function logBrowserToolRegistration(profileId: string, target: BrowserTarget): void {
   const logger = getLogger()
-  logger.info({ profileId, category: 'browser' }, 'Built-in browser MCP server registered')
+  logger.info({ profileId, target, category: 'browser' }, 'Built-in browser MCP server registered')
 }
