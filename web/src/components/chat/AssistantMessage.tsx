@@ -39,6 +39,10 @@ function InsufficientCreditsMessage() {
 export function AssistantMessage({ message }: { message: Message }) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
+  const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content)
@@ -51,40 +55,40 @@ export function AssistantMessage({ message }: { message: Message }) {
   return (
     <AIMessage from="assistant" data-testid="message-assistant">
       <div className="group flex gap-3 py-3">
-        <Avatar className="h-8 w-8 mt-0.5">
+        <Avatar className="h-8 w-8">
           <AvatarImage src="/icon.svg" alt="YouClaw" />
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-muted-foreground mb-1.5">
-            {t.chat.assistant}
-            <span className="ml-2 text-[10px] opacity-60">
-              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          {message.toolUse && message.toolUse.length > 0 && (
-            <ToolUseBlock items={message.toolUse} />
-          )}
           <div className="relative">
-            {isInsufficientCredits ? (
-              <InsufficientCreditsMessage />
-            ) : (
-              <>
-                <MessageContent>
-                  <MessageResponse>{message.content}</MessageResponse>
-                </MessageContent>
-                <MessageActions className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <MessageAction
-                    tooltip={copied ? t.chat.copied : t.chat.copyCode}
-                    onClick={handleCopy}
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                  </MessageAction>
-                </MessageActions>
-              </>
+            <div className="pointer-events-none absolute bottom-full left-0 mb-1 text-xs font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              {t.chat.assistant}
+              <span className="ml-2 text-[10px] opacity-60">{timestamp}</span>
+            </div>
+            {message.toolUse && message.toolUse.length > 0 && (
+              <ToolUseBlock items={message.toolUse} />
             )}
+            <div className="relative">
+              {isInsufficientCredits ? (
+                <InsufficientCreditsMessage />
+              ) : (
+                <>
+                  <MessageContent>
+                    <MessageResponse>{message.content}</MessageResponse>
+                  </MessageContent>
+                  <MessageActions className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <MessageAction
+                      tooltip={copied ? t.chat.copied : t.chat.copyCode}
+                      onClick={handleCopy}
+                    >
+                      {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    </MessageAction>
+                  </MessageActions>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
