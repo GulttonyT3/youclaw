@@ -99,6 +99,7 @@ export interface BrowserDiscovery {
 }
 
 export type BrowserMainBridgeStatus = 'connected' | 'ready' | 'no_browser_detected'
+export type BrowserMainBridgeConnectionMode = 'none' | 'manual-cdp-fallback' | 'main-bridge'
 
 export interface BrowserMainBridgeState {
   profileId: string
@@ -112,8 +113,16 @@ export interface BrowserMainBridgeState {
   relayConnected: boolean
   relayToken: string
   relayCdpUrl: string | null
+  connectedBrowserId: string | null
+  connectedBrowserName: string | null
+  connectedBrowserKind: BrowserDiscoveryKind | null
+  connectedTabId: string | null
+  connectedTabUrl: string | null
+  connectedTabTitle: string | null
+  connectedAt: string | null
+  updatedAt: string | null
   status: BrowserMainBridgeStatus
-  connectionMode: 'manual-cdp-fallback'
+  connectionMode: BrowserMainBridgeConnectionMode
   extensionBridgeAvailable: false
 }
 

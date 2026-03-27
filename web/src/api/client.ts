@@ -894,8 +894,16 @@ export interface BrowserMainBridgeDTO {
   relayConnected: boolean
   relayToken: string
   relayCdpUrl: string | null
+  connectedBrowserId: string | null
+  connectedBrowserName: string | null
+  connectedBrowserKind: BrowserDiscoveryEntryDTO['kind'] | null
+  connectedTabId: string | null
+  connectedTabUrl: string | null
+  connectedTabTitle: string | null
+  connectedAt: string | null
+  updatedAt: string | null
   status: 'connected' | 'ready' | 'no_browser_detected'
-  connectionMode: 'manual-cdp-fallback'
+  connectionMode: 'none' | 'manual-cdp-fallback' | 'main-bridge'
   extensionBridgeAvailable: false
 }
 
@@ -967,6 +975,34 @@ export async function selectBrowserProfileMainBridgeBrowser(id: string, browserI
     {
       method: 'POST',
       body: JSON.stringify({ browserId }),
+    },
+  )
+}
+
+export async function connectBrowserProfileMainBridge(id: string, input: {
+  token: string
+  cdpUrl: string
+  browserId?: string | null
+  browserName?: string | null
+  browserKind?: BrowserDiscoveryEntryDTO['kind'] | null
+  tabId?: string | null
+  tabUrl?: string | null
+  tabTitle?: string | null
+}) {
+  return apiFetch<{ ok: boolean; state: BrowserMainBridgeDTO; relay: BrowserRelayDTO; runtime: BrowserProfileDTO['runtime'] }>(
+    `/api/browser/profiles/${encodeURIComponent(id)}/main-bridge/connect`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function disconnectBrowserProfileMainBridge(id: string) {
+  return apiFetch<{ ok: boolean; state: BrowserMainBridgeDTO; relay: BrowserRelayDTO; runtime: BrowserProfileDTO['runtime'] }>(
+    `/api/browser/profiles/${encodeURIComponent(id)}/main-bridge/disconnect`,
+    {
+      method: 'POST',
     },
   )
 }

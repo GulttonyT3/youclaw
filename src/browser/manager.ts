@@ -35,8 +35,20 @@ import {
   setBrowserRelayConnection,
   type BrowserRelayState,
 } from './relay.ts'
-import { buildBrowserMainBridgeState } from './main-bridge.ts'
-import type { BrowserMainBridgeState, BrowserProfile, BrowserProfileRuntime, CreateBrowserProfileInput, UpdateBrowserProfileInput } from './types.ts'
+import {
+  buildBrowserMainBridgeState,
+  clearBrowserMainBridgeSession,
+  deleteBrowserMainBridgeProfile,
+  setBrowserMainBridgeSession,
+} from './main-bridge.ts'
+import type {
+  BrowserMainBridgeState,
+  BrowserProfile,
+  BrowserProfileRuntime,
+  BrowserDiscoveryKind,
+  CreateBrowserProfileInput,
+  UpdateBrowserProfileInput,
+} from './types.ts'
 
 type ProfileTab = {
   id: string
@@ -137,6 +149,7 @@ export class BrowserManager {
     await this.stopProfile(id).catch(() => {})
     deleteBrowserProfile(id)
     deleteBrowserRelayProfile(id)
+    deleteBrowserMainBridgeProfile(id)
 
     if (profile.driver === 'managed' && profile.userDataDir && this.isManagedDataDir(profile.userDataDir)) {
       try {
@@ -240,6 +253,44 @@ export class BrowserManager {
     return { relay, runtime }
   }
 
+  async connectMainBridge(id: string, params: {
+    token: string
+    cdpUrl: string
+    browserId?: string | null
+    browserName?: string | null
+    browserKind?: BrowserDiscoveryKind | null
+    tabId?: string | null
+    tabUrl?: string | null
+    tabTitle?: string | null
+  }): Promise<{ state: BrowserMainBridgeState; relay: BrowserRelayState; runtime: BrowserProfileRuntime }> {
+    const profile = getBrowserProfile(id)
+    if (!profile) throw new Error('Browser profile not found')
+    if (profile.driver !== 'extension-relay') {
+      throw new Error('Browser profile does not use the extension-relay driver')
+    }
+
+    const relayResult = await this.connectRelay(id, params.token, params.cdpUrl)
+    const currentState = buildBrowserMainBridgeState(profile, relayResult.relay)
+    const selectedBrowser = params.browserId
+      ? currentState.browsers.find((browser) => browser.id === params.browserId)
+      : currentState.browsers.find((browser) => browser.id === currentState.selectedBrowserId)
+
+    setBrowserMainBridgeSession(id, {
+      browserId: selectedBrowser?.id ?? params.browserId ?? null,
+      browserName: params.browserName ?? selectedBrowser?.name ?? currentState.selectedBrowserName,
+      browserKind: params.browserKind ?? selectedBrowser?.kind ?? null,
+      tabId: params.tabId ?? null,
+      tabUrl: params.tabUrl ?? null,
+      tabTitle: params.tabTitle ?? null,
+    })
+
+    return {
+      state: this.getMainBridgeState(id),
+      relay: relayResult.relay,
+      runtime: relayResult.runtime,
+    }
+  }
+
   async disconnectRelay(id: string): Promise<{ relay: BrowserRelayState; runtime: BrowserProfileRuntime }> {
     const profile = getBrowserProfile(id)
     if (!profile) throw new Error('Browser profile not found')
@@ -257,6 +308,22 @@ export class BrowserManager {
     })
 
     return { relay, runtime }
+  }
+
+  async disconnectMainBridge(id: string): Promise<{ state: BrowserMainBridgeState; relay: BrowserRelayState; runtime: BrowserProfileRuntime }> {
+    const profile = getBrowserProfile(id)
+    if (!profile) throw new Error('Browser profile not found')
+    if (profile.driver !== 'extension-relay') {
+      throw new Error('Browser profile does not use the extension-relay driver')
+    }
+
+    clearBrowserMainBridgeSession(id)
+    const relayResult = await this.disconnectRelay(id)
+    return {
+      state: this.getMainBridgeState(id),
+      relay: relayResult.relay,
+      runtime: relayResult.runtime,
+    }
   }
 
   async rotateRelayToken(id: string): Promise<{ relay: BrowserRelayState; runtime: BrowserProfileRuntime }> {
