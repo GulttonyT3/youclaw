@@ -342,6 +342,7 @@ function ProfileDetail({
   onRestart: () => void
   onDelete: () => void
 }) {
+  const { t } = useI18n()
   const runtimeStatus = profile.runtime?.status ?? 'stopped'
   const running = runtimeStatus === 'running' || runtimeStatus === 'starting'
   const isExtensionRelay = profile.driver === 'extension-relay'
