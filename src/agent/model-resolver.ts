@@ -21,7 +21,6 @@ const PROVIDER_MAP: Record<string, string> = {
   mistral: 'mistral',
   together: 'together',
   fireworks: 'fireworks',
-
 }
 
 // Default model IDs per provider for fallback
