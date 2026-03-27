@@ -27,8 +27,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { AlertTriangle, FolderOpen, Globe, Link, Play, Plus, RotateCw, Square, Trash2 } from 'lucide-react'
 import { useDragRegion } from '@/hooks/useDragRegion'
-
-type Notice = { type: 'success' | 'error'; text: string } | null
+import { notify } from '@/stores/app'
 
 export function BrowserProfiles() {
   const { t } = useI18n()
@@ -41,7 +40,6 @@ export function BrowserProfiles() {
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice>(null)
 
   const selectedProfile = profiles.find((p) => p.id === selectedId) ?? null
 
@@ -61,21 +59,22 @@ export function BrowserProfiles() {
 
   const handleControl = async (id: string, action: 'start' | 'stop' | 'restart') => {
     setBusyId(id)
-    setNotice(null)
     try {
       if (action === 'start') {
         await startBrowserProfile(id)
-        setNotice({ type: 'success', text: t.browser.launchSuccess })
+        notify.success(t.browser.launchSuccess)
       } else if (action === 'stop') {
         await stopBrowserProfile(id)
-        setNotice({ type: 'success', text: 'Browser stopped' })
+        notify.success('Browser stopped')
       } else {
         await restartBrowserProfile(id)
-        setNotice({ type: 'success', text: 'Browser restarted' })
+        notify.success('Browser restarted')
       }
       loadProfiles()
     } catch (err) {
-      setNotice({ type: 'error', text: err instanceof Error ? err.message : t.browser.launchFailed })
+      notify.error(err instanceof Error ? err.message : t.browser.launchFailed, {
+        durationMs: 6000,
+      })
     } finally {
       setBusyId(null)
     }
@@ -160,7 +159,6 @@ export function BrowserProfiles() {
             profile={selectedProfile}
             onRefresh={loadProfiles}
             isBusy={busyId === selectedProfile.id}
-            notice={selectedId === selectedProfile.id ? notice : null}
             onStart={() => handleControl(selectedProfile.id, 'start')}
             onStop={() => handleControl(selectedProfile.id, 'stop')}
             onRestart={() => handleControl(selectedProfile.id, 'restart')}
@@ -266,7 +264,6 @@ function ProfileDetail({
   profile,
   onRefresh,
   isBusy,
-  notice,
   onStart,
   onStop,
   onRestart,
@@ -275,7 +272,6 @@ function ProfileDetail({
   profile: BrowserProfileDTO
   onRefresh: () => void
   isBusy: boolean
-  notice: Notice
   onStart: () => void
   onStop: () => void
   onRestart: () => void
@@ -287,7 +283,6 @@ function ProfileDetail({
   const [relay, setRelay] = useState<BrowserRelayDTO | null>(null)
   const [relayUrl, setRelayUrl] = useState('')
   const [relayBusy, setRelayBusy] = useState<'connect' | 'disconnect' | 'rotate' | null>(null)
-  const [relayNotice, setRelayNotice] = useState<Notice>(null)
 
   const loadRelay = useCallback(async () => {
     if (!isExtensionRelay) {
@@ -300,7 +295,9 @@ function ProfileDetail({
       setRelay(next)
       setRelayUrl(next.cdpUrl ?? '')
     } catch (err) {
-      setRelayNotice({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load relay state' })
+      notify.error(err instanceof Error ? err.message : 'Failed to load relay state', {
+        durationMs: 6000,
+      })
     }
   }, [isExtensionRelay, profile.id])
 
@@ -311,7 +308,6 @@ function ProfileDetail({
   const handleRelayConnect = async () => {
     if (!relay?.token || !relayUrl.trim()) return
     setRelayBusy('connect')
-    setRelayNotice(null)
     try {
       const result = await connectBrowserProfileRelay(profile.id, {
         token: relay.token,
@@ -319,10 +315,12 @@ function ProfileDetail({
       })
       setRelay(result.relay)
       setRelayUrl(result.relay.cdpUrl ?? relayUrl.trim())
-      setRelayNotice({ type: 'success', text: 'Relay attached successfully.' })
+      notify.success('Relay attached successfully.')
       onRefresh()
     } catch (err) {
-      setRelayNotice({ type: 'error', text: err instanceof Error ? err.message : 'Failed to attach relay' })
+      notify.error(err instanceof Error ? err.message : 'Failed to attach relay', {
+        durationMs: 6000,
+      })
     } finally {
       setRelayBusy(null)
     }
@@ -330,14 +328,15 @@ function ProfileDetail({
 
   const handleRelayDisconnect = async () => {
     setRelayBusy('disconnect')
-    setRelayNotice(null)
     try {
       const result = await disconnectBrowserProfileRelay(profile.id)
       setRelay(result.relay)
-      setRelayNotice({ type: 'success', text: 'Relay disconnected.' })
+      notify.success('Relay disconnected.')
       onRefresh()
     } catch (err) {
-      setRelayNotice({ type: 'error', text: err instanceof Error ? err.message : 'Failed to disconnect relay' })
+      notify.error(err instanceof Error ? err.message : 'Failed to disconnect relay', {
+        durationMs: 6000,
+      })
     } finally {
       setRelayBusy(null)
     }
@@ -345,15 +344,16 @@ function ProfileDetail({
 
   const handleRelayRotateToken = async () => {
     setRelayBusy('rotate')
-    setRelayNotice(null)
     try {
       const result = await rotateBrowserProfileRelayToken(profile.id)
       setRelay(result.relay)
       setRelayUrl('')
-      setRelayNotice({ type: 'success', text: 'Relay token rotated. Existing relay connections were cleared.' })
+      notify.success('Relay token rotated. Existing relay connections were cleared.')
       onRefresh()
     } catch (err) {
-      setRelayNotice({ type: 'error', text: err instanceof Error ? err.message : 'Failed to rotate relay token' })
+      notify.error(err instanceof Error ? err.message : 'Failed to rotate relay token', {
+        durationMs: 6000,
+      })
     } finally {
       setRelayBusy(null)
     }
@@ -494,33 +494,6 @@ function ProfileDetail({
             <Link className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
             <span>{profile.runtime.wsEndpoint}</span>
           </div>
-        </div>
-      )}
-
-      {notice && (
-        <div
-          data-testid="browser-launch-message"
-          className={cn(
-            'text-xs rounded-xl p-3 border whitespace-pre-line',
-            notice.type === 'success'
-              ? 'bg-green-500/10 border-green-500/30 text-green-500'
-              : 'bg-red-500/10 border-red-500/30 text-red-400',
-          )}
-        >
-          {notice.text}
-        </div>
-      )}
-
-      {relayNotice && (
-        <div
-          className={cn(
-            'text-xs rounded-xl p-3 border whitespace-pre-line',
-            relayNotice.type === 'success'
-              ? 'bg-green-500/10 border-green-500/30 text-green-500'
-              : 'bg-red-500/10 border-red-500/30 text-red-400',
-          )}
-        >
-          {relayNotice.text}
         </div>
       )}
 

@@ -26,7 +26,7 @@ import { RegistrySourceSelect } from '@/components/RegistrySourceSelect'
 import { MarketplaceVirtualList } from '@/components/skills/MarketplaceVirtualList'
 import { useMarketplaceFeed } from '@/hooks/useMarketplaceFeed'
 import { toMarketplaceCardViewModel, toMarketplaceInstallDialogViewModel } from '@/lib/marketplace-view-model'
-import { useAppRuntimeStore } from '@/stores/app'
+import { notify, useAppRuntimeStore } from '@/stores/app'
 import { useDragRegion } from "@/hooks/useDragRegion"
 import {
   AgentMarketplaceSkillState,
@@ -833,7 +833,6 @@ function AgentSkillsSection({
   const registrySource = useAppRuntimeStore((s) => s.registrySource)
   const registrySources = useAppRuntimeStore((s) => s.registrySources)
   const setRegistrySource = useAppRuntimeStore((s) => s.setRegistrySource)
-  const showGlobalBubble = useAppRuntimeStore((s) => s.showGlobalBubble)
   const [search, setSearch] = useState('')
 
   // Marketplace dialog state
@@ -933,10 +932,7 @@ function AgentSkillsSection({
       const beforeNames = new Set(installedSkillNames)
       const result = await installRecommendedSkill(skill.slug, registrySource)
       if (!result.ok) {
-        showGlobalBubble({
-          type: 'error',
-          message: formatActionError(result.error, t.skills.installFailed),
-        })
+        notify.error(formatActionError(result.error, t.skills.installFailed))
         return
       }
 
@@ -953,14 +949,9 @@ function AgentSkillsSection({
       }
       markMarketplaceSkillInstalled(skill.slug, newSkill?.name)
       onUpdate()
-      showGlobalBubble({
-        message: buildMarketplaceMessage(t.skills.marketplaceInstallSuccess, skill.displayName),
-      })
+      notify.success(buildMarketplaceMessage(t.skills.marketplaceInstallSuccess, skill.displayName))
     } catch (error) {
-      showGlobalBubble({
-        type: 'error',
-        message: formatActionError(error instanceof Error ? error.message : undefined, t.skills.installFailed),
-      })
+      notify.error(formatActionError(error instanceof Error ? error.message : undefined, t.skills.installFailed))
     } finally {
       setInstallingSlug(null)
     }

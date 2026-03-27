@@ -12,7 +12,7 @@ import {
   type MarketplaceInstallDialogViewModel,
 } from '../lib/marketplace-view-model'
 import type { MarketplaceChangeEvent } from '../lib/marketplace-updates'
-import { useAppRuntimeStore } from '../stores/app'
+import { notify } from '../stores/app'
 import { Puzzle, Download, Loader2, Trash2, RefreshCw } from 'lucide-react'
 
 function normalizeMarketplaceActionError(message: string, fallback: string, skillNotFoundLabel: string) {
@@ -50,7 +50,6 @@ export function MarketplaceCard({
   registrySource?: RegistrySelectableSource
 }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [status, setStatus] = useState<'idle' | 'installing' | 'updating' | 'uninstalling'>('idle')
   const [confirmDetailViewModel, setConfirmDetailViewModel] = useState<MarketplaceInstallDialogViewModel | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -69,19 +68,17 @@ export function MarketplaceCard({
       const result = await installRecommendedSkill(viewModel.slug, actionSource)
       if (result.ok) {
         setStatus('idle')
-        showGlobalBubble({
-          message: buildMarketplaceMessage(t.skills.marketplaceInstallSuccess),
-        })
+        notify.success(buildMarketplaceMessage(t.skills.marketplaceInstallSuccess))
         onChanged({ type: 'install', slug: viewModel.slug, source: actionSource })
       } else {
         const message = formatActionError(result.error, t.skills.installFailed)
         setStatus('idle')
-        showGlobalBubble({ type: 'error', message })
+        notify.error(message)
       }
     } catch (error) {
       const message = formatActionError(error instanceof Error ? error.message : undefined, t.skills.installFailed)
       setStatus('idle')
-      showGlobalBubble({ type: 'error', message })
+      notify.error(message)
     }
   }
 
@@ -91,19 +88,17 @@ export function MarketplaceCard({
       const result = await updateMarketplaceSkill(viewModel.slug, actionSource)
       if (result.ok) {
         setStatus('idle')
-        showGlobalBubble({
-          message: buildMarketplaceMessage(t.skills.marketplaceUpdateSuccess),
-        })
+        notify.success(buildMarketplaceMessage(t.skills.marketplaceUpdateSuccess))
         onChanged({ type: 'update', slug: viewModel.slug, source: actionSource })
       } else {
         const message = formatActionError(result.error, t.skills.updateFailed)
         setStatus('idle')
-        showGlobalBubble({ type: 'error', message })
+        notify.error(message)
       }
     } catch (error) {
       const message = formatActionError(error instanceof Error ? error.message : undefined, t.skills.updateFailed)
       setStatus('idle')
-      showGlobalBubble({ type: 'error', message })
+      notify.error(message)
     }
   }
 
@@ -125,19 +120,17 @@ export function MarketplaceCard({
       const result = await uninstallRecommendedSkill(viewModel.slug, actionSource)
       if (result.ok) {
         setStatus('idle')
-        showGlobalBubble({
-          message: buildMarketplaceMessage(t.skills.marketplaceUninstallSuccess),
-        })
+        notify.success(buildMarketplaceMessage(t.skills.marketplaceUninstallSuccess))
         onChanged({ type: 'uninstall', slug: viewModel.slug, source: actionSource })
       } else {
         const message = formatActionError(result.error, t.skills.uninstallFailed)
         setStatus('idle')
-        showGlobalBubble({ type: 'error', message })
+        notify.error(message)
       }
     } catch (error) {
       const message = formatActionError(error instanceof Error ? error.message : undefined, t.skills.uninstallFailed)
       setStatus('idle')
-      showGlobalBubble({ type: 'error', message })
+      notify.error(message)
     }
   }
 

@@ -16,7 +16,7 @@ import {
   resolveImportModeFromUrl,
 } from '@/lib/skill-import'
 import { cn } from '@/lib/utils'
-import { useAppRuntimeStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import { Download, FolderGit2, Link2, Loader2, Sparkles, Wand2 } from 'lucide-react'
 
 export type SkillImportProviderId = 'raw-url' | 'github'
@@ -60,7 +60,6 @@ export function SkillImportPanel({
   existingSkillNames?: string[]
 }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [forms, setForms] = useState<Record<SkillImportProviderId, ProviderFormValues>>(initialForms)
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
   const [actionStatus, setActionStatus] = useState<'idle' | 'probing' | 'importing'>('idle')
@@ -202,25 +201,22 @@ export function SkillImportPanel({
         const nextSuggestedName = nextProbeResult.suggestedName?.trim() || ''
         if (nextSuggestedName && existingSkillNameSet.has(nextSuggestedName)) {
           const message = t.skills.importSkillAlreadyExists.replace('{name}', nextSuggestedName)
-          showGlobalBubble({ type: 'error', message })
+          notify.error(message)
           return
         }
       }
 
       await selectedDefinition.importSkill(formValues)
       await onImported()
-      showGlobalBubble({ message: t.skills.importSuccess })
+      notify.success(t.skills.importSuccess)
     } catch (error) {
       const message = getMappedImportErrorMessage(mode, error, t)
       setActionError(message)
-      showGlobalBubble({
-        type: 'error',
-        message,
-      })
+      notify.error(message)
     } finally {
       setActionStatus('idle')
     }
-  }, [existingSkillNameSet, formValues, mode, onImported, primaryFieldError, probeResult, selectedDefinition, showGlobalBubble, supportsProbe, t])
+  }, [existingSkillNameSet, formValues, mode, onImported, primaryFieldError, probeResult, selectedDefinition, supportsProbe, t])
 
   const ProviderIcon = selectedDefinition.icon
 

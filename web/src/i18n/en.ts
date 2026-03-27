@@ -65,6 +65,7 @@ export const en = {
     stopGenerating: 'Stop generating',
     copyCode: 'Copy',
     copied: 'Copied!',
+    contentExported: 'Content exported',
     browserProfile: 'Browser Profile',
     noBrowserProfile: 'None',
     editAvatar: 'Change Avatar',

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { useAppRuntimeStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import {
   AlertTriangle,
   Check,
@@ -121,7 +121,6 @@ export function SkillListItem({
 
 export function EnvConfigRow({ envName, configured, onSaved }: { envName: string; configured: boolean; onSaved: () => void }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [editing, setEditing] = useState(!configured)
   const [value, setValue] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving'>('idle')
@@ -137,15 +136,14 @@ export function EnvConfigRow({ envName, configured, onSaved }: { envName: string
       setEditing(false)
       setValue('')
       onSaved()
-      showGlobalBubble({ message: formatMessage(t.skills.envSaveSuccess) })
+      notify.success(formatMessage(t.skills.envSaveSuccess))
     } catch (error) {
       setStatus('idle')
-      showGlobalBubble({
-        type: 'error',
-        message: error instanceof Error && error.message
+      notify.error(
+        error instanceof Error && error.message
           ? error.message
           : formatMessage(t.skills.envSaveFailed),
-      })
+      )
     }
   }
 
@@ -207,7 +205,6 @@ export function EnvConfigRow({ envName, configured, onSaved }: { envName: string
 
 export function InstallButton({ method, command, skillName, onInstalled }: { method: string; command: string; skillName: string; onInstalled: () => void }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [copied, setCopied] = useState(false)
   const [status, setStatus] = useState<'idle' | 'installing'>('idle')
 
@@ -225,20 +222,14 @@ export function InstallButton({ method, command, skillName, onInstalled }: { met
       if (result.ok) {
         setStatus('idle')
         onInstalled()
-        showGlobalBubble({ message: t.skills.installSuccess })
+        notify.success(t.skills.installSuccess)
       } else {
         setStatus('idle')
-        showGlobalBubble({
-          type: 'error',
-          message: result.stderr || `${t.skills.exitCodeLabel}: ${result.exitCode}`,
-        })
+        notify.error(result.stderr || `${t.skills.exitCodeLabel}: ${result.exitCode}`)
       }
     } catch (error) {
       setStatus('idle')
-      showGlobalBubble({
-        type: 'error',
-        message: error instanceof Error && error.message ? error.message : t.skills.installFailed,
-      })
+      notify.error(error instanceof Error && error.message ? error.message : t.skills.installFailed)
     }
   }
 
@@ -330,7 +321,6 @@ export function resolveEnvTools(missingDeps: string[]): string[] {
  */
 export function EnvToolInstallButton({ tool, onInstalled }: { tool: string; onInstalled: () => void }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [status, setStatus] = useState<'idle' | 'installing'>('idle')
 
   const handleInstall = async () => {
@@ -338,19 +328,15 @@ export function EnvToolInstallButton({ tool, onInstalled }: { tool: string; onIn
     try {
       const result = await installTool(tool)
       if (result.ok) {
-        showGlobalBubble({ message: `${tool} ${t.envSetup.installSuccess}` })
+        notify.success(`${tool} ${t.envSetup.installSuccess}`)
         onInstalled()
       } else {
-        showGlobalBubble({
-          type: 'error',
-          message: result.stderr || t.envSetup.installFailed,
+        notify.error(result.stderr || t.envSetup.installFailed, {
           durationMs: 6000,
         })
       }
     } catch (err) {
-      showGlobalBubble({
-        type: 'error',
-        message: err instanceof Error ? err.message : t.envSetup.installFailed,
+      notify.error(err instanceof Error ? err.message : t.envSetup.installFailed, {
         durationMs: 6000,
       })
     }

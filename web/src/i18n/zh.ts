@@ -67,6 +67,7 @@ export const zh: Translations = {
     stopGenerating: '停止生成',
     copyCode: '复制',
     copied: '已复制！',
+    contentExported: '内容已导出',
     browserProfile: '浏览器 Profile',
     noBrowserProfile: '不使用',
     editAvatar: '修改头像',

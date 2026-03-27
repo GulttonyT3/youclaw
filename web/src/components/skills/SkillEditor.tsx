@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { bumpDraftVersion, normalizeSlug, stringifySkillMarkdownLocal } from '@/components/skills/authoring-helpers'
 import { useI18n } from '@/i18n'
-import { useAppRuntimeStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import { CheckCircle2, PencilLine, Rocket, Trash2 } from 'lucide-react'
 
 interface SkillEditorProps {
@@ -67,7 +67,6 @@ function resolveSelectedBindingIds(detail: ManagedSkillDetail | null) {
 
 export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkillsChanged }: SkillEditorProps) {
   const { t, locale } = useI18n()
-  const showGlobalBubble = useAppRuntimeStore((state) => state.showGlobalBubble)
   const [detail, setDetail] = useState<ManagedSkillDetail | null>(null)
   const [draft, setDraft] = useState<SkillAuthoringDraft>(createEmptyDraft(locale))
   const [validation, setValidation] = useState<SkillValidationResult | null>(null)
@@ -307,14 +306,9 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
       setActiveSkillName(published.skill.name)
       onSkillSelected(published.skill.name)
       await loadSkill(published.skill.name)
-      showGlobalBubble({
-        message: formatSkillMessage(t.skills.skillPublishSuccess, published.skill.name),
-      })
+      notify.success(formatSkillMessage(t.skills.skillPublishSuccess, published.skill.name))
     } catch (nextError) {
-      showGlobalBubble({
-        type: 'error',
-        message: getOperationErrorMessage(nextError, t.skills.skillPublishFailed),
-      })
+      notify.error(getOperationErrorMessage(nextError, t.skills.skillPublishFailed))
     } finally {
       setPublishing(false)
     }
@@ -329,7 +323,6 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
     onSkillSelected,
     onSkillsChanged,
     selectedBindingIds,
-    showGlobalBubble,
     t.skills.publishBeforeBind,
     t.skills.skillPublishFailed,
     t.skills.skillPublishSuccess,
@@ -338,7 +331,7 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
   const handleDiscardDraft = useCallback(async () => {
     if (!activeSkillName) {
       initializeDraft(createEmptyDraft(locale), { markDirty: false })
-      showGlobalBubble({ message: t.skills.draftDiscardSuccess })
+      notify.success(t.skills.draftDiscardSuccess)
       return
     }
 
@@ -359,14 +352,11 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
       initializeDraft(baseDraft, { markDirty: false })
       setValidation(null)
       onSkillsChanged()
-      showGlobalBubble({ message: t.skills.draftDiscardSuccess })
+      notify.success(t.skills.draftDiscardSuccess)
     } catch (nextError) {
-      showGlobalBubble({
-        type: 'error',
-        message: getOperationErrorMessage(nextError, t.skills.draftDiscardFailed),
-      })
+      notify.error(getOperationErrorMessage(nextError, t.skills.draftDiscardFailed))
     }
-  }, [activeSkillName, getOperationErrorMessage, initializeDraft, locale, onSkillsChanged, showGlobalBubble, t.skills.draftDiscardFailed, t.skills.draftDiscardSuccess])
+  }, [activeSkillName, getOperationErrorMessage, initializeDraft, locale, onSkillsChanged, t.skills.draftDiscardFailed, t.skills.draftDiscardSuccess])
 
   const handleDelete = useCallback(async () => {
     if (!activeSkillName) {
@@ -383,21 +373,18 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
       onSkillsChanged()
       onSkillSelected(null)
       onBack()
-      showGlobalBubble({
-        message: formatSkillMessage(t.skills.skillDeleteSuccess, deletedSkillName),
-      })
+      notify.success(formatSkillMessage(t.skills.skillDeleteSuccess, deletedSkillName))
     } catch (nextError) {
-      showGlobalBubble({
-        type: 'error',
-        message: getOperationErrorMessage(
+      notify.error(
+        getOperationErrorMessage(
           nextError,
           formatSkillMessage(t.skills.skillDeleteFailed, activeSkillName),
         ),
-      })
+      )
     } finally {
       setDeleting(false)
     }
-  }, [activeSkillName, formatSkillMessage, getOperationErrorMessage, onBack, onSkillSelected, onSkillsChanged, showGlobalBubble, t.skills.skillDeleteFailed, t.skills.skillDeleteSuccess])
+  }, [activeSkillName, formatSkillMessage, getOperationErrorMessage, onBack, onSkillSelected, onSkillsChanged, t.skills.skillDeleteFailed, t.skills.skillDeleteSuccess])
 
   const handleDraftBindingToggle = useCallback((agentId: string, checked: boolean) => {
     setSelectedBindingIds((current) => {

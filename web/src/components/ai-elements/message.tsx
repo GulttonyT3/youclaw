@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
+import type { ComponentProps, HTMLAttributes, ReactElement, ReactNode } from "react";
 
 type MessageRole = "user" | "assistant" | "system";
 
@@ -19,6 +19,16 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import {
+  CodeBlock,
+  CodeBlockCopyButton,
+  CodeBlockDownloadButton,
+  type ExtraProps,
+  Streamdown,
+  useIsCodeFenceIncomplete,
+} from "streamdown";
+import { useI18n } from "@/i18n";
+import { notify } from "@/stores/app";
+import {
   createContext,
   memo,
   useCallback,
@@ -27,7 +37,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: MessageRole;
@@ -321,6 +330,81 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code };
+const codeLanguagePattern = /language-([^\s]+)/;
+const startLinePattern = /\{(\d+)\}/;
+const tableDownloadTriggerTitle = "Download table";
+
+type MessageResponseCodeProps = ComponentProps<"code"> &
+  ExtraProps & {
+    "data-block"?: boolean;
+  };
+
+function getCodeContent(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) {
+    return children
+      .map((child) => (typeof child === "string" ? child : ""))
+      .join("");
+  }
+  return "";
+}
+
+const MessageResponseCode = ({
+  children,
+  className,
+  node,
+  ["data-block"]: isBlock,
+  ...props
+}: MessageResponseCodeProps) => {
+  const { t } = useI18n();
+  const isIncomplete = useIsCodeFenceIncomplete();
+
+  if (!isBlock) {
+    return (
+      <code
+        className={cn("rounded bg-muted px-1.5 py-0.5 font-mono text-sm", className)}
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  }
+
+  const code = getCodeContent(children);
+  const language = className?.match(codeLanguagePattern)?.[1] ?? "";
+  const metastring =
+    typeof node?.properties?.metastring === "string"
+      ? node.properties.metastring
+      : undefined;
+  const startLine = (() => {
+    const value = metastring?.match(startLinePattern)?.[1];
+    if (!value) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  })();
+
+  return (
+    <CodeBlock
+      className={className}
+      code={code}
+      isIncomplete={isIncomplete}
+      language={language}
+      startLine={startLine}
+    >
+      <CodeBlockDownloadButton
+        code={code}
+        language={language}
+        onDownload={() => {
+          notify.success(t.chat.contentExported);
+        }}
+        onError={(error) => {
+          notify.error(error instanceof Error ? error.message : "Export failed");
+        }}
+      />
+      <CodeBlockCopyButton code={code} />
+    </CodeBlock>
+  );
+};
 
 const linkSafetyConfig = {
   enabled: true,
@@ -331,17 +415,51 @@ const linkSafetyConfig = {
 };
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      linkSafety={linkSafetyConfig}
-      {...props}
-    />
-  ),
+  ({ className, components, ...props }: MessageResponseProps) => {
+    const { t } = useI18n();
+    const mergedComponents = useMemo(
+      () => ({
+        ...components,
+        code: MessageResponseCode,
+      }),
+      [components]
+    );
+
+    const handleClick = useCallback(
+      (event: React.MouseEvent<HTMLDivElement>) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        const button = target.closest("button");
+        if (!(button instanceof HTMLButtonElement)) return;
+
+        const optionLabel = button.textContent?.trim();
+        if (optionLabel !== "CSV" && optionLabel !== "Markdown") return;
+
+        const trigger = button.parentElement?.previousElementSibling;
+        if (!(trigger instanceof HTMLButtonElement)) return;
+        if (trigger.title !== tableDownloadTriggerTitle) return;
+
+        notify.success(t.chat.contentExported);
+      },
+      [t.chat.contentExported]
+    );
+
+    return (
+      <div onClick={handleClick}>
+        <Streamdown
+          className={cn(
+            "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+            className
+          )}
+          components={mergedComponents}
+          plugins={streamdownPlugins}
+          linkSafety={linkSafetyConfig}
+          {...props}
+        />
+      </div>
+    );
+  },
   (prevProps, nextProps) => prevProps.children === nextProps.children
 );
 

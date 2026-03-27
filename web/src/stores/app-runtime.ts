@@ -22,15 +22,32 @@ import { isTauri, openExternal } from '@/api/transport'
 import { resolvePreferredRegistrySource } from '@/lib/registry-source'
 import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
+import { toast, type ExternalToast } from 'sonner'
 import { useAppPreferencesStore } from './app-preferences'
 
-type GlobalBubbleType = 'success' | 'error'
+type ToastType = 'success' | 'error' | 'info' | 'warning' | 'loading' | 'default'
 
-interface GlobalBubbleState {
-  id: number
+type NotifyOptions = {
+  durationMs?: number
+  id?: string | number
+  description?: ExternalToast['description']
+}
+
+type NotifyInput = NotifyOptions & {
   message: string
-  type: GlobalBubbleType
-  durationMs: number
+  type?: ToastType
+}
+
+type NotifyMethod = (message: string, options?: NotifyOptions) => string | number
+
+type NotifyFn = ((toast: NotifyInput) => string | number) & {
+  success: NotifyMethod
+  error: NotifyMethod
+  info: NotifyMethod
+  warning: NotifyMethod
+  loading: NotifyMethod
+  message: NotifyMethod
+  dismiss: (id?: string | number) => void
 }
 
 interface AppRuntimeState {
@@ -65,16 +82,11 @@ interface AppRuntimeState {
   fetchCreditBalance: () => Promise<void>
   openPayPage: () => Promise<void>
 
-  globalBubble: GlobalBubbleState | null
-  showGlobalBubble: (bubble: { message: string; type?: GlobalBubbleType; durationMs?: number }) => void
-  dismissGlobalBubble: () => void
-
   hydrate: () => Promise<void>
 }
 
 let authPollInterval: ReturnType<typeof setInterval> | null = null
 let authPollTimeout: ReturnType<typeof setTimeout> | null = null
-let nextGlobalBubbleId = 0
 
 function clearAuthPolling() {
   if (authPollInterval) {
@@ -86,6 +98,56 @@ function clearAuthPolling() {
     authPollTimeout = null
   }
 }
+
+function toToastOptions(options?: NotifyOptions): ExternalToast {
+  return {
+    id: options?.id,
+    description: options?.description,
+    duration: options?.durationMs,
+  }
+}
+
+function dispatchToast(
+  type: ToastType,
+  message: string,
+  options?: NotifyOptions,
+): string | number {
+  const toastOptions = {
+    ...toToastOptions(options),
+    duration: options?.durationMs ?? (type === 'loading' ? Infinity : 4000),
+  }
+
+  switch (type) {
+    case 'error':
+      return toast.error(message, toastOptions)
+    case 'info':
+      return toast.info(message, toastOptions)
+    case 'warning':
+      return toast.warning(message, toastOptions)
+    case 'loading':
+      return toast.loading(message, toastOptions)
+    case 'default':
+      return toast(message, toastOptions)
+    case 'success':
+    default:
+      return toast.success(message, toastOptions)
+  }
+}
+
+export const notify = Object.assign(
+  ({ message, type = 'success', ...options }: NotifyInput) => dispatchToast(type, message, options),
+  {
+    success: (message: string, options?: NotifyOptions) => dispatchToast('success', message, options),
+    error: (message: string, options?: NotifyOptions) => dispatchToast('error', message, options),
+    info: (message: string, options?: NotifyOptions) => dispatchToast('info', message, options),
+    warning: (message: string, options?: NotifyOptions) => dispatchToast('warning', message, options),
+    loading: (message: string, options?: NotifyOptions) => dispatchToast('loading', message, options),
+    message: (message: string, options?: NotifyOptions) => dispatchToast('default', message, options),
+    dismiss: (id?: string | number) => {
+      toast.dismiss(id)
+    },
+  },
+) as NotifyFn
 
 async function ensureWindowsDeepLinkRegistration(): Promise<void> {
   if (!isTauri || !navigator.userAgent.includes('Windows')) return
@@ -313,21 +375,6 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
     } catch (err) {
       console.error('Open pay page failed:', err)
     }
-  },
-
-  globalBubble: null,
-  showGlobalBubble: ({ message, type = 'success', durationMs = 4000 }) => {
-    set({
-      globalBubble: {
-        id: ++nextGlobalBubbleId,
-        message,
-        type,
-        durationMs,
-      },
-    })
-  },
-  dismissGlobalBubble: () => {
-    set({ globalBubble: null })
   },
 
   hydrate: async () => {

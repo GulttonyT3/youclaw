@@ -26,7 +26,7 @@ import { uploadChatAttachment } from "@/api/client";
 import { useChatContext } from "@/hooks/chatCtx";
 import { useI18n } from "@/i18n";
 import { resolveChatAttachments } from "@/lib/chat-attachments";
-import { useAppRuntimeStore } from "@/stores/app";
+import { notify, useAppRuntimeStore } from "@/stores/app";
 import { Bot, PlusIcon } from "lucide-react";
 
 const MAX_FILES = 10;
@@ -100,7 +100,9 @@ export function ChatInput() {
     if (!text && msg.files.length === 0) return;
 
     if (!modelReady) {
-      alert(t.settings.modelNotConfigured);
+      notify.error(t.settings.modelNotConfigured, {
+        durationMs: 6000,
+      });
       return;
     }
 
@@ -108,7 +110,9 @@ export function ChatInput() {
       msg.files,
       uploadChatAttachment,
     ).catch((error) => {
-      alert(error instanceof Error ? error.message : String(error));
+      notify.error(error instanceof Error ? error.message : String(error), {
+        durationMs: 6000,
+      });
       throw error;
     });
 

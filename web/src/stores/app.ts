@@ -1,2 +1,2 @@
 export { useAppPreferencesStore, type CloseAction } from './app-preferences'
-export { useAppRuntimeStore } from './app-runtime'
+export { useAppRuntimeStore, notify } from './app-runtime'
