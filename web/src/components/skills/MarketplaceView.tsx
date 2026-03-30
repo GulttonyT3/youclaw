@@ -5,63 +5,23 @@ import type { MarketplaceChangeEvent } from '@/lib/marketplace-updates'
 import type { MarketplaceFeedStatus } from '@/hooks/useMarketplaceFeed'
 import { MarketplaceCard } from '@/components/MarketplaceCard'
 import { RegistrySourceSelect } from '@/components/RegistrySourceSelect'
+import { MarketplaceFeedHeader } from '@/components/skills/MarketplaceFeedHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MarketplaceVirtualList } from '@/components/skills/MarketplaceVirtualList'
 import {
-  BarChart3,
-  Brain,
-  Code2,
   LayoutGrid,
   List,
   Loader2,
-  MessageCircle,
-  type LucideIcon,
-  PenTool,
-  Rocket,
   Search,
-  ShieldCheck,
   Store,
 } from 'lucide-react'
 import { useI18n } from '@/i18n'
-import { getRegistrySourceLabel } from '@/lib/registry-source'
-import {
-  getTencentMarketplaceCategoryLabel,
-  tencentMarketplaceCategoryOrder,
-  type TencentMarketplaceCategoryFilter,
-} from '@/lib/tencent-marketplace-category'
-import { cn } from '@/lib/utils'
+import { type TencentMarketplaceCategoryFilter } from '@/lib/tencent-marketplace-category'
 
 type MarketplaceViewRow = { key: string; type: 'card'; viewModel: MarketplaceCardViewModel }
 type MarketplaceViewMode = 'grid' | 'list'
-
-const tencentCategoryMeta: Record<
-  Exclude<TencentMarketplaceCategoryFilter, 'all'>,
-  { icon: LucideIcon }
-> = {
-  'ai-intelligence': {
-    icon: Brain,
-  },
-  'developer-tools': {
-    icon: Code2,
-  },
-  productivity: {
-    icon: Rocket,
-  },
-  'data-analysis': {
-    icon: BarChart3,
-  },
-  'content-creation': {
-    icon: PenTool,
-  },
-  'security-compliance': {
-    icon: ShieldCheck,
-  },
-  'communication-collaboration': {
-    icon: MessageCircle,
-  },
-}
 
 function getMarketplaceSortLabel(
   sort: MarketplaceSort,
@@ -136,22 +96,6 @@ export function MarketplaceView({
     [registrySourceInfo],
   )
   const showSortControls = Boolean(availableSorts.length > 0 && marketplaceSort)
-  const showTencentCategories = registrySource === 'tencent' || registrySource === 'recommended'
-  const tencentCategoryOptions = useMemo(
-    () => ([
-      {
-        value: 'all' as const,
-        label: getTencentMarketplaceCategoryLabel('all', t),
-        icon: LayoutGrid,
-      },
-      ...tencentMarketplaceCategoryOrder.map((category) => ({
-        value: category,
-        label: getTencentMarketplaceCategoryLabel(category, t),
-        ...tencentCategoryMeta[category],
-      })),
-    ]),
-    [t],
-  )
 
   const rows = useMemo<MarketplaceViewRow[]>(() => {
     return resultsViewModel.flatItems.map((viewModel) => ({
@@ -162,41 +106,12 @@ export function MarketplaceView({
   }, [resultsViewModel])
 
   const listHeader = (
-    <div className="space-y-6 pb-6">
-      {showTencentCategories && (
-        <div className="flex flex-wrap gap-3">
-            {tencentCategoryOptions.map((option) => {
-              const Icon = option.icon
-              const isSelected = marketplaceCategoryFilter === option.value
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  data-testid={`marketplace-category-${option.value}`}
-                  aria-pressed={isSelected}
-                  onClick={() => onMarketplaceCategoryFilterChange(option.value)}
-                  className={cn(
-                    'inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-all duration-200 outline-none',
-                    isSelected
-                      ? 'border-primary/35 bg-primary/[0.06] text-foreground shadow-[0_12px_24px_-18px_rgba(37,99,235,0.45)]'
-                      : 'border-border/70 bg-background text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground',
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0 text-current" />
-                  <span>{option.label}</span>
-                </button>
-              )
-            })}
-        </div>
-      )}
-
-      {!resultsViewModel.isSearching && registrySource === 'recommended' && (
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium">{getRegistrySourceLabel(registrySource, registrySources) || t.skills.recommended}</h3>
-        </div>
-      )}
-    </div>
+    <MarketplaceFeedHeader
+      registrySource={registrySource}
+      marketplaceCategoryFilter={marketplaceCategoryFilter}
+      onMarketplaceCategoryFilterChange={onMarketplaceCategoryFilterChange}
+      t={t}
+    />
   )
 
   return (
@@ -247,7 +162,6 @@ export function MarketplaceView({
               size="icon"
               className="hidden h-12 w-12 rounded-2xl border-border/70 shadow-sm lg:inline-flex"
               aria-label={viewMode === 'grid' ? t.skills.switchToListView : t.skills.switchToGridView}
-              title={viewMode === 'grid' ? t.skills.switchToListView : t.skills.switchToGridView}
               type="button"
               onClick={() => {
                 setViewMode((current) => current === 'grid' ? 'list' : 'grid')
