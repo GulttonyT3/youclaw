@@ -1,13 +1,22 @@
 import { Hono } from 'hono'
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { resolve, basename } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import type { AgentManager } from '../agent/index.ts'
-import { DEFAULT_WORKSPACE_DOCS, DEFAULT_MEMORY_MD } from '../agent/index.ts'
+import { EDITABLE_WORKSPACE_DOCS } from '../agent/index.ts'
+import { ensureAgentWorkspace } from '../agent/workspace.ts'
+import { DEFAULT_BROWSER_PROFILE_ID } from '../browser/index.ts'
 
-// Workspace documents accessible via API
-const ALLOWED_DOCS = ['SOUL.md', 'AGENT.md', 'USER.md', 'TOOLS.md']
+const ALLOWED_DOCS = [...EDITABLE_WORKSPACE_DOCS, 'MEMORY.md'] as const
+type AllowedDoc = (typeof ALLOWED_DOCS)[number]
+
+function resolveDocPath(workspaceDir: string, filename: AllowedDoc): string {
+  if (filename === 'MEMORY.md') {
+    return resolve(workspaceDir, 'MEMORY.md')
+  }
+  return resolve(workspaceDir, filename)
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -78,7 +87,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     const docs: Record<string, string> = {}
 
     for (const filename of ALLOWED_DOCS) {
-      const filePath = resolve(workspaceDir, filename)
+      const filePath = resolveDocPath(workspaceDir, filename)
       if (existsSync(filePath)) {
         docs[filename] = readFileSync(filePath, 'utf-8')
       }
@@ -92,7 +101,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     const id = c.req.param('id')
     const filename = c.req.param('filename')
 
-    if (!ALLOWED_DOCS.includes(filename)) {
+    if (!ALLOWED_DOCS.includes(filename as AllowedDoc)) {
       return c.json({ error: `File not allowed: ${filename}. Allowed files: ${ALLOWED_DOCS.join(', ')}` }, 400)
     }
 
@@ -102,7 +111,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
       return c.json({ error: 'Agent not found' }, 404)
     }
 
-    const filePath = resolve(instance.workspaceDir, filename)
+    const filePath = resolveDocPath(instance.workspaceDir, filename as AllowedDoc)
 
     if (!existsSync(filePath)) {
       return c.json({ error: `File not found: ${filename}` }, 404)
@@ -117,7 +126,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     const id = c.req.param('id')
     const filename = c.req.param('filename')
 
-    if (!ALLOWED_DOCS.includes(filename)) {
+    if (!ALLOWED_DOCS.includes(filename as AllowedDoc)) {
       return c.json({ error: `File not allowed: ${filename}. Allowed files: ${ALLOWED_DOCS.join(', ')}` }, 400)
     }
 
@@ -133,7 +142,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
       return c.json({ error: 'Request body must include a "content" field (string)' }, 400)
     }
 
-    const filePath = resolve(instance.workspaceDir, filename)
+    const filePath = resolveDocPath(instance.workspaceDir, filename as AllowedDoc)
     writeFileSync(filePath, body.content)
 
     return c.json({ filename, content: body.content })
@@ -166,13 +175,16 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     // Create agent directory
     mkdirSync(agentDir, { recursive: true })
 
-    // Create memory subdirectory
-    mkdirSync(resolve(agentDir, 'memory'), { recursive: true })
-
     // Write agent.yaml
     const config: Record<string, unknown> = {
       id,
       name: body.name,
+      browser: {
+        defaultProfile: DEFAULT_BROWSER_PROFILE_ID,
+      },
+      memory: {
+        enabled: true,
+      },
       skills: [],
     }
     if (body.model) {
@@ -180,14 +192,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     }
 
     writeFileSync(resolve(agentDir, 'agent.yaml'), stringifyYaml(config))
-
-    // Initialize workspace documents from built-in templates
-    for (const filename of ALLOWED_DOCS) {
-      const targetFilePath = resolve(agentDir, filename)
-      const content = DEFAULT_WORKSPACE_DOCS[filename] ?? `# ${basename(filename, '.md')}\n`
-      writeFileSync(targetFilePath, content)
-    }
-    writeFileSync(resolve(agentDir, 'memory', 'MEMORY.md'), DEFAULT_MEMORY_MD)
+    ensureAgentWorkspace(agentDir, { ensureBootstrap: true })
 
     // Reload agents
     await agentManager.reloadAgents()
@@ -223,7 +228,7 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     // Write back agent.yaml
     writeFileSync(configPath, stringifyYaml(merged))
 
-    // Reload agents (also syncs .claude/skills/ via AgentManager.loadAgents)
+    // Reload agents so updated configuration takes effect.
     await agentManager.reloadAgents()
 
     const updated = agentManager.getAgent(id)

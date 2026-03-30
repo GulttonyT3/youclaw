@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from 'bun:test'
 import './setup.ts'
-import { createTaskMcpServer } from '../src/agent/task-mcp.ts'
+import { createTaskMcpServer, createTaskTools } from '../src/agent/task-mcp.ts'
 import { TaskServiceError } from '../src/task/index.ts'
 
 function getToolHandler(server: any, name: string) {
@@ -182,5 +182,17 @@ describe('task-mcp tools', () => {
 
     expect(result.isError).toBe(true)
     expect(result.content[0]?.text).toContain('Task not found')
+  })
+
+  test('createTaskTools exposes runtime tool names', () => {
+    const tools = createTaskTools(
+      { agentId: 'agent-runtime', chatId: 'chat-runtime' },
+      { service: { listTasksForAgent: async () => [], applyTaskAction: async () => ({ action: 'create', matchedTaskId: 't1', task: null }) } },
+    )
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'mcp__task__list_tasks',
+      'mcp__task__update_task',
+    ])
   })
 })

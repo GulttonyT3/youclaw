@@ -1,403 +1,126 @@
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
-import { existsSync, copyFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { execSync } from 'node:child_process'
-import { getEnv } from '../config/index.ts'
-import { which } from '../utils/shell-env.ts'
+import { createAgentSession, createCodingTools, SessionManager, AuthStorage, DefaultResourceLoader, getAgentDir } from '@mariozechner/pi-coding-agent'
+import type { AgentSession, AgentSessionEvent, SessionEntry, ToolDefinition } from '@mariozechner/pi-coding-agent'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, existsSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
-import { deleteSession, getSession, saveSession } from '../db/index.ts'
+import { writeModelInvocationLog } from '../logger/model-invocation.ts'
+import { getMessages, getSessionEntry, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
 import type { AgentToolUse } from '../events/types.ts'
 import type { PromptBuilder } from './prompt-builder.ts'
-import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
-import { resolveMcpServers } from './mcp-utils.ts'
-import { createBuiltinMcpServer } from './builtin-mcp.ts'
-import { createMessageMcpServer } from './message-mcp.ts'
-import { buildParsedDocumentsPrompt, createDocumentMcpServer, ingestDocumentAttachments } from './document-mcp.ts'
-import { createTaskMcpServer } from './task-mcp.ts'
+import { buildParsedDocumentsPrompt, ingestDocumentAttachments } from './document-mcp.ts'
 import { preprocessAttachments } from './document-converter.ts'
 import { abortRegistry } from './abort-registry.ts'
-import { getActiveModelConfig } from '../settings/manager.ts'
 import { getAuthToken } from '../routes/auth.ts'
+import { resolvePiModel } from './model-resolver.ts'
 import type { BrowserManager } from '../browser/index.ts'
-import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
+import type { SkillsLoader } from '../skills/loader.ts'
+import type { MemoryManager } from '../memory/index.ts'
+import { buildRecoveredConversationPrompt, resolveStoredSessionFile, type StoredSessionEntry } from './context-utils.ts'
 import type { AgentConfig, ProcessParams } from './types.ts'
+import { clearBootstrapSnapshotOnSessionRollover } from './bootstrap-cache.ts'
+import type { SecretsManager } from './secrets.ts'
+import { buildRuntimeCustomTools, filterConfiguredTools } from './runtime-tools.ts'
+import { resolveRuntimeModelConfig } from './runtime-model.ts'
 
-// Safe logger wrapper — resolveCliPath() may run before logger is initialised
-function safeLog(level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>): void {
-  try {
-    const logger = getLogger()
-    logger[level]({ ...extra, category: 'agent' }, msg)
-  } catch {
-    // Logger not yet initialised — fall back to console
-    // eslint-disable-next-line no-console
-    console[level](`[agent] ${msg}`, extra ?? '')
-  }
+const COMPACTION_MEMORY_INSTRUCTIONS = [
+  'Focus on durable context for future turns.',
+  'Preserve user preferences, decisions, open questions, file paths, and unfinished work.',
+  'Call out concrete TODOs and unresolved risks.',
+].join(' ')
+
+type CompactionSummary = {
+  summary: string
+  trigger: 'manual' | 'auto'
+  sessionId?: string
 }
 
-// Resolve claude-agent-sdk cli.js path
-// - Tauri bundled mode: copy from RESOURCES_DIR to DATA_DIR/sdk-cache (quarantine bypass)
-// - Dev mode: locate via require.resolve in node_modules
-function resolveCliPath(): string {
-  // Tauri bundled mode: cli.js is in the resources directory
-  const resourcesDir = process.env.RESOURCES_DIR
-  if (resourcesDir) {
-    const resourceCliPath = resolve(resourcesDir, '_up_/node_modules/@anthropic-ai/claude-agent-sdk/cli.js')
-    if (existsSync(resourceCliPath)) {
-      // Copy to DATA_DIR/sdk-cache to escape quarantine on macOS
-      const dataDir = process.env.DATA_DIR
-      if (dataDir) {
-        try {
-          const cacheDir = resolve(dataDir, 'sdk-cache')
-          const cachedCliPath = resolve(cacheDir, 'cli.js')
-
-          // Version-aware cache: only copy if file size differs (new SDK version)
-          let needsCopy = true
-          if (existsSync(cachedCliPath)) {
-            try {
-              const srcSize = statSync(resourceCliPath).size
-              const dstSize = statSync(cachedCliPath).size
-              needsCopy = srcSize !== dstSize
-            } catch {
-              needsCopy = true
-            }
-          }
-
-          if (needsCopy) {
-            mkdirSync(cacheDir, { recursive: true })
-            copyFileSync(resourceCliPath, cachedCliPath)
-            safeLog('info', `Copied cli.js to sdk-cache (quarantine bypass)`, { src: resourceCliPath, dst: cachedCliPath })
-          }
-
-          // Ensure Node.js recognises cli.js as ESM (required on Windows where Node is the runtime).
-          // Written outside needsCopy so existing caches without package.json are also fixed.
-          const pkgJsonPath = resolve(cacheDir, 'package.json')
-          if (!existsSync(pkgJsonPath)) {
-            writeFileSync(pkgJsonPath, '{"type":"module"}', 'utf-8')
-          }
-
-          // Strip macOS quarantine attribute from the cached copy
-          if (process.platform === 'darwin') {
-            try {
-              execSync(`xattr -d com.apple.quarantine "${cachedCliPath}"`, { timeout: 5000 })
-              safeLog('info', 'Stripped quarantine from cached cli.js')
-            } catch {
-              // Attribute may not exist — that's fine
-            }
-          }
-
-          return cachedCliPath
-        } catch (copyErr) {
-          safeLog('warn', 'Failed to copy cli.js to sdk-cache, falling back to resource path', {
-            error: copyErr instanceof Error ? copyErr.message : String(copyErr),
-          })
-          return resourceCliPath
-        }
-      }
-      return resourceCliPath
-    }
-  }
-
-  // Dev mode: locate via require.resolve
-  try {
-    const require = createRequire(import.meta.url)
-    const sdkEntry = require.resolve('@anthropic-ai/claude-agent-sdk')
-    return resolve(dirname(sdkEntry), 'cli.js')
-  } catch {
-    // fallback: relative to project root
-    return resolve(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk/cli.js')
-  }
+type AssistantSessionMessage = {
+  role?: string
+  stopReason?: string
+  errorMessage?: string
+  content?: Array<{ type?: string; text?: string }>
 }
 
-/**
- * Validate that the resolved cli.js is executable.
- * Logs diagnostics but never throws — failures are advisory only.
- */
-function validateCliExecutable(cliPath: string): void {
-  // Check file exists
-  if (!existsSync(cliPath)) {
-    safeLog('error', 'SDK cli.js not found', { cliPath })
-    return
-  }
-
-  // macOS: check quarantine attribute
-  if (process.platform === 'darwin') {
-    try {
-      const xattrOutput = execSync(`xattr -l "${cliPath}"`, { timeout: 3000, encoding: 'utf-8' })
-      if (xattrOutput.includes('com.apple.quarantine')) {
-        safeLog('warn', 'SDK cli.js still has quarantine attribute — Gatekeeper may block execution', { cliPath })
-      }
-    } catch {
-      // xattr command failed — likely no attributes at all, which is fine
-    }
-  }
-
-  // Quick spawn test: verify the CLI can at least start
-  // Uses resolveRuntimeExecutable() which returns embedded bun if available,
-  // falling back to system bun or process.execPath in dev mode.
-  const runtime = resolveRuntimeExecutable()
-  try {
-    execSync(`"${runtime}" "${cliPath}" --help`, { timeout: 5000, encoding: 'utf-8', stdio: 'pipe' })
-    safeLog('info', 'SDK cli.js validation passed', { cliPath, runtime })
-  } catch (spawnErr) {
-    safeLog('warn', 'SDK cli.js quick-test failed — the agent may not start correctly', {
-      cliPath,
-      runtime,
-      error: spawnErr instanceof Error ? spawnErr.message : String(spawnErr),
-    })
-  }
+type RuntimeAttachment = {
+  filename: string
+  mediaType: string
+  filePath?: string
+  data?: string
+  size?: number
 }
 
-/**
- * Detect macOS system proxy settings and inject into process env.
- * Only runs on macOS; silently skips on other platforms.
- */
-function detectSystemProxy(): void {
-  if (process.platform !== 'darwin') return
-
-  // Skip if proxy env vars are already set
-  if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy) {
-    safeLog('info', 'Proxy env vars already set, skipping system proxy detection', {
-      HTTPS_PROXY: process.env.HTTPS_PROXY || process.env.https_proxy || '(not set)',
-      HTTP_PROXY: process.env.HTTP_PROXY || process.env.http_proxy || '(not set)',
-    })
-    return
-  }
-
-  try {
-    const output = execSync('networksetup -getsecurewebproxy Wi-Fi', { timeout: 3000, encoding: 'utf-8' })
-    const enabledMatch = output.match(/^Enabled:\s*(Yes|No)/im)
-    if (enabledMatch && enabledMatch[1] === 'Yes') {
-      const serverMatch = output.match(/^Server:\s*(.+)/im)
-      const portMatch = output.match(/^Port:\s*(\d+)/im)
-      if (serverMatch?.[1] && portMatch?.[1]) {
-        const proxyUrl = `http://${serverMatch[1].trim()}:${portMatch[1].trim()}`
-        process.env.HTTPS_PROXY = proxyUrl
-        process.env.HTTP_PROXY = proxyUrl
-        safeLog('info', 'Detected macOS system proxy', { proxyUrl })
-      }
-    }
-  } catch (proxyErr) {
-    safeLog('info', 'System proxy detection failed or unavailable', {
-      error: proxyErr instanceof Error ? proxyErr.message : String(proxyErr),
-    })
-  }
-  safeLog('info', 'No system proxy detected')
+type SessionWithSystemPromptOverride = {
+  _baseSystemPrompt?: string
+  _rebuildSystemPrompt?: (toolNames: string[]) => string
 }
 
-/**
- * Ensure Bun runtime is available for SDK subprocess.
- * Previously extracted embedded Bun from resources; now the sidecar is self-contained
- * and we rely on system Bun instead. Returns null (no embedded Bun).
- */
-export function ensureBunRuntime(): string | null {
-  return null
+function applySystemPromptOverrideToSession(session: AgentSession, systemPrompt: string): void {
+  const prompt = systemPrompt.trim()
+  session.agent.setSystemPrompt(prompt)
+  const mutableSession = session as unknown as SessionWithSystemPromptOverride
+  mutableSession._baseSystemPrompt = prompt
+  mutableSession._rebuildSystemPrompt = () => prompt
 }
 
-/**
- * Return the directory containing the embedded Bun binary, or null if unavailable.
- * No longer ships embedded Bun — always returns null.
- */
-export function getBunRuntimeDir(): string | null {
-  return null
-}
-
-/**
- * Check that a Node.js executable meets the minimum version required by claude-agent-sdk (>=18).
- * Returns true if the version is sufficient, false otherwise.
- */
-function isNodeVersionSufficient(nodePath: string): boolean {
-  try {
-    const version = execSync(`"${nodePath}" --version`, { timeout: 5000, encoding: 'utf-8' }).trim()
-    // version looks like "v18.20.1" or "v16.14.0"
-    const major = parseInt(version.replace(/^v/, '').split('.')[0] ?? '0', 10)
-    if (major < 18) {
-      safeLog('warn', `Node.js ${version} is too old (requires >=18), skipping`, { nodePath })
-      return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Find Node.js executable on Windows.
- * cli.js is a Node.js program — Bun's Node.js compat on Windows is insufficient.
- * Requires Node >= 18 (claude-agent-sdk engine requirement).
- */
-function findNodeExecutable(): string | null {
-  if (process.platform !== 'win32') return null
-
-  try {
-    const whereOutput = execSync('where node', { timeout: 5000, encoding: 'utf-8' }).trim()
-    const nodePath = whereOutput.split('\n')[0]?.trim() ?? ''
-    if (nodePath && existsSync(nodePath) && isNodeVersionSufficient(nodePath)) {
-      return nodePath
-    }
-  } catch {
-    // node not in PATH
-  }
-
-  // Check common install locations
-  const candidates = [
-    process.env.ProgramFiles && `${process.env.ProgramFiles}\\nodejs\\node.exe`,
-    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}\\fnm_multishells\\node.exe`,
-  ].filter(Boolean) as string[]
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate) && isNodeVersionSufficient(candidate)) return candidate
-  }
-
-  return null
-}
-
-function resolveRuntimeExecutable(): string {
-  const isBundled = process.execPath.includes('.app/') || process.execPath.includes('youclaw-server')
-  if (!isBundled) return process.execPath
-
-  // Try system Bun first
-  const bunPath = which('bun')
-  if (bunPath) {
-    safeLog('info', 'Using system Bun for SDK subprocess', { bunPath })
-    return bunPath
-  }
-
-  // Windows fallback: try system Node.js (>=18)
-  if (process.platform === 'win32') {
-    const nodePath = findNodeExecutable()
-    if (nodePath) {
-      safeLog('info', 'Bun unavailable, using Node.js for SDK subprocess on Windows', { nodePath })
-      return nodePath
-    }
-    safeLog('warn', 'Neither Bun nor Node.js (>=18) found on Windows')
-  }
-
-  // Last resort: hope 'bun' is on PATH at execution time
-  return 'bun'
-}
-
-function appendPathEntries(entries: string[]): void {
-  if (process.platform !== 'win32' || entries.length === 0) return
-  const currentPath = process.env.PATH || ''
-  const parts = currentPath.split(';').filter(Boolean)
-  for (const entry of entries) {
-    if (!entry || !existsSync(entry)) continue
-    if (!parts.includes(entry)) {
-      parts.push(entry)
-    }
-  }
-  process.env.PATH = parts.join(';')
-}
-
-function setWindowsGitBashPath(bashPath: string, source: string): void {
-  process.env.CLAUDE_CODE_GIT_BASH_PATH = bashPath
-
-  const bashDir = dirname(bashPath)
-  const gitRoot = bashDir.endsWith('\\usr\\bin')
-    ? dirname(dirname(bashDir))
-    : dirname(bashDir)
-
-  appendPathEntries([
-    resolve(gitRoot, 'bin'),
-    resolve(gitRoot, 'cmd'),
-    resolve(gitRoot, 'usr', 'bin'),
-    resolve(gitRoot, 'mingw64', 'bin'),
-  ])
-
-  safeLog('info', 'Git Bash ready for claude-agent-sdk on Windows', { source, bashPath })
-}
-
-function ensureWindowsGitBash(): string | null {
-  if (process.platform !== 'win32') return null
-
-  const existing = process.env.CLAUDE_CODE_GIT_BASH_PATH
-  if (existing && existsSync(existing)) {
-    setWindowsGitBashPath(existing, 'environment')
-    return existing
-  }
-
-  // Auto-detect system Git installation only (no bundled MinGit fallback)
-  const programFiles = process.env.ProgramFiles || 'C:\\Program Files'
-  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
-  const localAppData = process.env.LOCALAPPDATA || ''
-  const userProfile = process.env.USERPROFILE || ''
-
-  const systemCandidates = [
-    `${programFiles}\\Git\\bin\\bash.exe`,
-    `${programFilesX86}\\Git\\bin\\bash.exe`,
-    `${localAppData}\\Programs\\Git\\bin\\bash.exe`,
-    `${userProfile}\\scoop\\apps\\git\\current\\bin\\bash.exe`,
+export function buildEmptyAssistantResponseErrorMessage(modelConfig: {
+  provider: string
+  modelId: string
+  baseUrl: string
+}): string {
+  const parts = [
+    `Model returned an empty response (provider=${modelConfig.provider}, model=${modelConfig.modelId})`,
   ]
-
-  try {
-    const whereBashOutput = execSync('where bash', { timeout: 5000, encoding: 'utf-8' })
-    for (const line of whereBashOutput.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
-      systemCandidates.push(line)
-    }
-  } catch {
-    // ignore when bash is not on PATH
+  if (modelConfig.baseUrl) {
+    parts.push(`baseUrl=${modelConfig.baseUrl}`)
   }
-
-  for (const candidate of systemCandidates) {
-    if (existsSync(candidate)) {
-      setWindowsGitBashPath(candidate, 'system-git')
-      return candidate
-    }
-  }
-
-  safeLog('warn', 'Git Bash not found on Windows; claude-agent-sdk may fail to start')
-  return null
-}
-
-// Deferred startup checks — run once on first executeQuery() call
-let _startupChecksDone = false
-function ensureStartupChecks(cliPath: string): void {
-  if (_startupChecksDone) return
-  _startupChecksDone = true
-  detectSystemProxy()
-  validateCliExecutable(cliPath)
+  parts.push('Please check MODEL_PROVIDER, MODEL_ID, MODEL_BASE_URL, and model authentication.')
+  return parts.join('. ')
 }
 
 export class AgentRuntime {
   private config: AgentConfig
   private eventBus: EventBus
   private promptBuilder: PromptBuilder
-  private compiler: AgentCompiler | null
   private hooksManager: HooksManager | null
+  private skillsLoader: SkillsLoader | null
+  private memoryManager: MemoryManager | null
   private browserManager: BrowserManager | null
+  private secretsManager: SecretsManager | null
 
   constructor(
     config: AgentConfig,
     eventBus: EventBus,
     promptBuilder: PromptBuilder,
-    compiler?: AgentCompiler,
     hooksManager?: HooksManager,
+    skillsLoader?: SkillsLoader,
+    memoryManager?: MemoryManager,
     browserManager?: BrowserManager,
+    secretsManager?: SecretsManager,
   ) {
     this.config = config
     this.eventBus = eventBus
     this.promptBuilder = promptBuilder
-    this.compiler = compiler ?? null
     this.hooksManager = hooksManager ?? null
+    this.skillsLoader = skillsLoader ?? null
+    this.memoryManager = memoryManager ?? null
     this.browserManager = browserManager ?? null
+    this.secretsManager = secretsManager ?? null
   }
 
   /**
-   * Process a user message and return the agent's reply
+   * Process a user message and return the agent's reply.
    */
   async process(params: ProcessParams): Promise<string> {
     const { chatId, prompt, agentId, turnId } = params
     const logger = getLogger()
-    const env = getEnv()
 
-    // Notify processing started
     this.emitProcessing(agentId, chatId, true, turnId)
 
-    // on_session_start hook
     if (this.hooksManager) {
       await this.hooksManager.execute(agentId, 'on_session_start', {
         agentId,
@@ -407,11 +130,11 @@ export class AgentRuntime {
       })
     }
 
-    // Look up existing session
-    const existingSessionId = getSession(agentId, chatId)
+    const existingSession = getSessionEntry(agentId, chatId)
     logger.info({
-      agentId, chatId,
-      hasSession: !!existingSessionId,
+      agentId,
+      chatId,
+      hasSession: !!existingSession?.sessionId,
       promptPreview: prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt,
       category: 'agent',
     }, 'Processing message')
@@ -419,7 +142,6 @@ export class AgentRuntime {
     const startTime = Date.now()
     let toolUse: AgentToolUse[] = []
     try {
-      // pre_process hook
       let finalPrompt = prompt
       if (this.hooksManager) {
         const preCtx = await this.hooksManager.execute(agentId, 'pre_process', {
@@ -436,174 +158,49 @@ export class AgentRuntime {
         }
       }
 
-      // Read model config from Settings (built-in uses .env, custom requires user input)
-      const modelConfig = getActiveModelConfig()
-      let model = env.AGENT_MODEL
-      if (modelConfig) {
-        model = modelConfig.modelId
-        // Set env vars for the SDK
-        process.env.ANTHROPIC_API_KEY = modelConfig.apiKey
-        if (modelConfig.baseUrl) {
-          process.env.ANTHROPIC_BASE_URL = modelConfig.baseUrl
-        } else {
-          delete process.env.ANTHROPIC_BASE_URL
-        }
-        logger.info({ provider: modelConfig.provider, model, baseUrl: modelConfig.baseUrl || '(default)' }, 'Model config loaded')
-        logger.debug({
-          agentId, chatId,
-          provider: modelConfig.provider,
-          modelId: modelConfig.modelId,
-          baseUrl: modelConfig.baseUrl || '(default)',
-          apiKeyPrefix: modelConfig.apiKey ? modelConfig.apiKey.slice(0, 8) + '***' : '(not set)',
-          category: 'agent',
-        }, 'Model config details')
-      } else {
-        // No model config available, clear env vars to prevent using user's system env vars
-        delete process.env.ANTHROPIC_API_KEY
-        delete process.env.ANTHROPIC_BASE_URL
-        logger.warn('No model config available. Agent features will not work. Please configure a model in Settings.')
+      const resolvedModel = resolveRuntimeModelConfig({
+        agentModel: this.config.hasExplicitModel ? this.config.model : undefined,
+      })
+      const modelConfig = resolvedModel.config
+      if (!modelConfig) {
+        throw new Error(resolvedModel.error ?? 'No model config available. Please configure a model in Settings.')
       }
 
-      // Handle auth headers based on provider
-      if (modelConfig?.provider === 'builtin') {
+      if (modelConfig.provider === 'builtin') {
         const authToken = getAuthToken()
         if (!authToken) {
           throw new Error('Not logged in: Please log in to use built-in models')
         }
-        process.env.ANTHROPIC_CUSTOM_HEADERS = `rdxtoken: ${authToken}`
-        // Inject auth token for MCP servers that proxy through ReadmeX (e.g. minimax)
-        process.env.READMEX_SA_TOKEN = authToken
-      } else {
-        // Custom model: clean up rdxtoken header to prevent leaking from previous builtin requests
-        delete process.env.ANTHROPIC_CUSTOM_HEADERS
-        delete process.env.READMEX_SA_TOKEN
-      }
-
-      // Pre-flight check: verify API connectivity before spawning SDK subprocess
-      if (modelConfig?.baseUrl) {
-        const preflightHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01',
-          'x-api-key': modelConfig.apiKey,
-        }
-        // Attach rdxtoken for builtin provider
-        const authToken = getAuthToken()
-        if (modelConfig.provider === 'builtin' && authToken) {
-          preflightHeaders['rdxtoken'] = authToken
-        }
-        const preflightUrl = `${modelConfig.baseUrl}/v1/messages`
-        const preflightBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] })
-        const preflightStartTime = Date.now()
-        logger.debug({
-          agentId, chatId,
-          url: preflightUrl,
-          headers: {
-            'Content-Type': preflightHeaders['Content-Type'],
-            'anthropic-version': preflightHeaders['anthropic-version'],
-            'x-api-key': preflightHeaders['x-api-key'] ? preflightHeaders['x-api-key'].slice(0, 8) + '***' : '(not set)',
-            rdxtoken: preflightHeaders['rdxtoken'] ? '(set)' : '(not set)',
-          },
-          bodyLength: preflightBody.length,
-          category: 'agent',
-        }, 'Pre-flight request starting')
-        try {
-          const preflight = await fetch(preflightUrl, {
-            method: 'POST',
-            headers: preflightHeaders,
-            body: preflightBody,
-            signal: AbortSignal.timeout(15000),
-          })
-          const preflightDurationMs = Date.now() - preflightStartTime
-          logger.debug({
-            agentId, chatId,
-            status: preflight.status,
-            statusText: preflight.statusText,
-            durationMs: preflightDurationMs,
-            responseHeaders: {
-              'content-type': preflight.headers.get('content-type'),
-              'x-request-id': preflight.headers.get('x-request-id'),
-              'retry-after': preflight.headers.get('retry-after'),
-            },
-            category: 'agent',
-          }, 'Pre-flight response received')
-          logger.info({
-            agentId, chatId,
-            preflightStatus: preflight.status,
-            baseUrl: modelConfig.baseUrl,
-            category: 'agent',
-          }, 'API pre-flight check completed')
-          if (preflight.status === 401 || preflight.status === 403) {
-            const body = await preflight.text().catch(() => '')
-            throw new Error(`API authentication failed (HTTP ${preflight.status}): ${body.slice(0, 200)}`)
-          }
-          if (preflight.status >= 500) {
-            const body = await preflight.text().catch(() => '')
-            logger.warn({ agentId, chatId, status: preflight.status, body: body.slice(0, 200), category: 'agent' }, 'API server error in pre-flight')
-          }
-        } catch (err) {
-          const preflightErrorDurationMs = Date.now() - preflightStartTime
-          if (err instanceof Error && err.message.startsWith('API authentication failed')) {
-            throw err
-          }
-          if (err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'))) {
-            logger.warn({
-              agentId, chatId,
-              errorType: 'timeout',
-              durationMs: preflightErrorDurationMs,
-              url: preflightUrl,
-              category: 'agent',
-            }, 'Pre-flight request timed out, proceeding with SDK anyway')
-          } else if (err instanceof Error && /ECONNREFUSED|ENOTFOUND|fetch failed/.test(err.message)) {
-            logger.warn({
-              agentId, chatId,
-              errorType: 'network',
-              errorName: err.name,
-              errorMessage: err.message,
-              durationMs: preflightErrorDurationMs,
-              url: preflightUrl,
-              category: 'agent',
-            }, 'Pre-flight network error, proceeding with SDK anyway')
-          }
-          logger.warn({
-            agentId, chatId,
-            error: String(err),
-            errorType: err instanceof Error ? err.name : 'unknown',
-            durationMs: preflightErrorDurationMs,
-            category: 'agent',
-          }, 'API pre-flight check failed, proceeding with SDK anyway')
-        }
       }
 
       logger.info({
-        agentId, chatId,
-        model,
-        baseUrl: process.env.ANTHROPIC_BASE_URL || '(default)',
-        hasCustomHeaders: !!process.env.ANTHROPIC_CUSTOM_HEADERS,
-        category: 'agent',
-      }, 'SDK env config before query')
+        provider: modelConfig.provider,
+        model: modelConfig.modelId,
+        baseUrl: modelConfig.baseUrl || '(default)',
+      }, 'Model config loaded')
 
-      const queryResult = await this.executeQuery(
+      const { fullText, sessionId, sessionFile, aborted, toolUse: collectedToolUse } = await this.executeQuery(
         finalPrompt,
         agentId,
         chatId,
-        turnId,
-        existingSessionId,
-        model,
-        params.requestedSkills,
+        existingSession,
+        modelConfig,
         params.browserProfileId,
+        params.requestedSkills,
         params.attachments,
+        turnId,
       )
-      const { fullText, sessionId, aborted } = queryResult
-      toolUse = queryResult.toolUse
+      toolUse = collectedToolUse
 
-      // Save or clear session
-      if (aborted) {
-        deleteSession(agentId, chatId)
-      } else if (sessionId) {
-        saveSession(agentId, chatId, sessionId)
+      if (sessionId) {
+        clearBootstrapSnapshotOnSessionRollover({
+          cacheKey: `${agentId}:${chatId}`,
+          previousSessionId: existingSession?.sessionId ?? null,
+          nextSessionId: sessionId,
+        })
+        saveSession(agentId, chatId, sessionId, sessionFile)
       }
 
-      // post_process hook
       let finalText = fullText
       if (this.hooksManager) {
         const postCtx = await this.hooksManager.execute(agentId, 'post_process', {
@@ -617,9 +214,10 @@ export class AgentRuntime {
         }
       }
 
-      // Broadcast completion event. Skip empty abort completions to avoid
-      // creating empty assistant messages while still letting processing=false
-      // arrive through the finally path.
+      if (!aborted && !finalText.trim()) {
+        throw new Error(buildEmptyAssistantResponseErrorMessage(modelConfig))
+      }
+
       if (!aborted || finalText.trim().length > 0) {
         this.eventBus.emit({
           type: 'complete',
@@ -635,7 +233,6 @@ export class AgentRuntime {
       const durationMs = Date.now() - startTime
       logger.info({ agentId, chatId, sessionId, responseLength: finalText.length, durationMs, category: 'agent' }, 'Message processing completed')
 
-      // on_session_end hook
       if (this.hooksManager) {
         await this.hooksManager.execute(agentId, 'on_session_end', {
           agentId,
@@ -650,11 +247,9 @@ export class AgentRuntime {
       const rawError = err instanceof Error ? err.message : String(err)
       logger.error({ agentId, chatId, error: rawError, durationMs: Date.now() - startTime, category: 'agent' }, 'Message processing failed')
 
-      // Convert SDK internal errors to user-friendly messages
       const { message: userError, errorCode } = this.humanizeError(rawError)
       logger.info({ agentId, chatId, errorCode, userError, category: 'agent' }, 'Error code identification result')
 
-      // on_error hook
       if (this.hooksManager) {
         await this.hooksManager.execute(agentId, 'on_error', {
           agentId,
@@ -676,41 +271,62 @@ export class AgentRuntime {
 
       return `Error: ${userError}`
     } finally {
-      // Clean up custom headers to prevent leaking between requests
-      delete process.env.ANTHROPIC_CUSTOM_HEADERS
       this.emitProcessing(agentId, chatId, false, turnId)
     }
   }
 
   /**
-   * Execute SDK query and stream-process messages
+   * Execute agent query via pi-mono in-process session.
    */
   private async executeQuery(
     prompt: string,
     agentId: string,
     chatId: string,
-    turnId: string | undefined,
-    existingSessionId: string | null,
-    model: string,
-    requestedSkills?: string[],
+    existingSession: StoredSessionEntry | null,
+    modelConfig: { apiKey: string; baseUrl: string; modelId: string; provider: string },
     browserProfileId?: string | null,
-    attachments?: Array<{ filename: string; mediaType: string; filePath: string }>,
-  ): Promise<{ fullText: string; sessionId: string; aborted: boolean; toolUse: AgentToolUse[] }> {
+    requestedSkills?: string[],
+    attachments?: RuntimeAttachment[],
+    turnId?: string,
+  ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null; aborted: boolean; toolUse: AgentToolUse[] }> {
     const logger = getLogger()
     const abortController = new AbortController()
     abortRegistry.register(chatId, abortController)
-    let fullText = ''
-    let sessionId = existingSessionId ?? ''
+    const invocationId = randomUUID()
     const toolUse: AgentToolUse[] = []
     const browserDisabled = browserProfileId === null
+    const browserTarget = this.config.browser?.target ?? 'host'
     const resolvedBrowserProfile = this.browserManager
       ? (browserDisabled
           ? null
-          : this.browserManager.resolveProfileSelection(browserProfileId, this.config.browser?.defaultProfile ?? this.config.browserProfile))
+          : this.browserManager.resolveProfileSelection(
+              browserProfileId ?? undefined,
+              this.config.browser?.defaultProfile ?? this.config.browserProfile,
+            ))
       : null
     const effectiveBrowserProfileId = resolvedBrowserProfile?.id
+    const skillSnapshot = this.skillsLoader
+      ? this.skillsLoader.buildSnapshotForAgent(this.config, requestedSkills)
+      : { prompt: '', skills: [], resolvedSkills: [], version: 0 }
+    const skillsPrompt = skillSnapshot.prompt
+    logger.info({
+      agentId,
+      chatId,
+      skillSnapshotVersion: skillSnapshot.version,
+      skillCount: skillSnapshot.skills.length,
+      skillNames: skillSnapshot.skills.map((skill) => skill.name),
+      category: 'agent',
+    }, 'Skill snapshot prepared')
+    const memoryContext = this.memoryManager && this.config.memory?.enabled !== false
+      ? this.memoryManager.getMemoryContext(agentId, {
+          recentDays: this.config.memory?.recentDays,
+          maxContextChars: this.config.memory?.maxContextChars,
+          query: prompt,
+        })
+      : undefined
 
-    // Build system prompt on the fly
+    let fullText = ''
+
     const systemPrompt = this.promptBuilder.build(
       this.config.workspaceDir,
       this.config,
@@ -718,8 +334,11 @@ export class AgentRuntime {
         agentId,
         chatId,
         requestedSkills,
+        skillsPrompt,
+        memoryContext,
         browserProfileId: effectiveBrowserProfileId,
         browserDisabled,
+        browserTarget,
         browserProfile: resolvedBrowserProfile
           ? {
               id: resolvedBrowserProfile.id,
@@ -730,422 +349,357 @@ export class AgentRuntime {
       },
     )
 
-    // Build query options
     const cwd = this.config.workspaceDir
-    const mcpServerNames = this.config.mcpServers ? Object.keys(this.config.mcpServers) : []
+    const model = resolvePiModel(modelConfig)
 
-    logger.info({
-      agentId, chatId,
-      systemPromptLength: systemPrompt.length,
-      model,
-      isResume: !!existingSessionId,
-      mcpServers: mcpServerNames.length > 0 ? mcpServerNames : undefined,
-      browserProfileId: effectiveBrowserProfileId,
-      subAgents: this.config.agents ? Object.keys(this.config.agents).length : 0,
-      maxTurns: this.config.maxTurns,
-      category: 'agent',
-    }, 'SDK query started')
+    const authStorage = AuthStorage.inMemory()
+    authStorage.setRuntimeApiKey(model.provider, modelConfig.apiKey)
 
-    // Ensure HOME is set on Windows (cli.js needs it)
-    if (process.platform === 'win32' && !process.env.HOME && process.env.USERPROFILE) {
-      process.env.HOME = process.env.USERPROFILE
-    }
-
-    // Ensure Git Bash is available on Windows (required by claude-agent-sdk shell runtime)
-    ensureWindowsGitBash()
-
-    const cliPath = resolveCliPath()
-    ensureStartupChecks(cliPath)
-    // Determine JS runtime executable for SDK subprocess
-    // Uses resolveRuntimeExecutable() which returns embedded bun if available,
-    // falling back to system bun or process.execPath in dev mode.
-    const executable = resolveRuntimeExecutable()
-
-    // Capture SDK subprocess stderr for diagnostics
-    let stderrOutput = ''
-
-    const queryOptions: Record<string, unknown> = {
-      model,
-      cwd,
-      systemPrompt,
-      abortController,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: cliPath,
-      executable,
-      settingSources: ['project'],
-      ...(existingSessionId ? { resume: existingSessionId } : {}),
-      stderr: (data: string) => {
-        stderrOutput += data
-        logger.debug({ agentId, chatId, stderr: data.slice(0, 500), category: 'agent' }, 'SDK subprocess stderr')
-      },
-    }
-    logger.info({ cliPath, executable, category: 'agent' }, 'SDK executable config')
-
-    // Sub-agent config (compile ref references via AgentCompiler)
-    if (this.config.agents) {
-      if (this.compiler) {
-        queryOptions.agents = this.compiler.resolve(this.config.agents, agentId)
-      } else {
-        queryOptions.agents = this.config.agents
+    if (modelConfig.provider === 'builtin') {
+      const authToken = getAuthToken()
+      if (authToken) {
+        model.headers = { ...model.headers, rdxtoken: authToken }
       }
     }
 
-    // MCP servers: resolve env vars + inject built-in image analysis/document/task servers
-    const mcpServers: Record<string, unknown> = {}
-    if (this.config.mcpServers) {
-      // Filter out legacy external minimax MCP (replaced by built-in)
-      const externalServers = { ...this.config.mcpServers }
-      delete externalServers['minimax']
-      const resolved = resolveMcpServers(externalServers)
-      Object.assign(mcpServers, resolved)
-    }
-    // Always inject built-in minimax MCP (runs in-process, no external dependency)
-    mcpServers['minimax'] = createBuiltinMcpServer()
-    mcpServers['message'] = createMessageMcpServer(chatId)
-    mcpServers['document'] = createDocumentMcpServer(chatId)
-    if (this.browserManager && resolvedBrowserProfile) {
-      mcpServers['browser'] = createBrowserMcpServer({
-        browserManager: this.browserManager,
-        chatId,
-        agentId,
-        profileId: resolvedBrowserProfile.id,
-      })
-      logBrowserToolRegistration(resolvedBrowserProfile.id)
-    }
-    mcpServers['task'] = createTaskMcpServer({
+    const sessionsDir = resolve(getPaths().data, 'sessions', agentId)
+    mkdirSync(sessionsDir, { recursive: true })
+    const existingSessionFile = resolveStoredSessionFile(sessionsDir, existingSession)
+
+    const sessionManager = existingSessionFile && existsSync(existingSessionFile)
+      ? SessionManager.open(existingSessionFile, sessionsDir)
+      : SessionManager.create(cwd, sessionsDir)
+
+    const tools = filterConfiguredTools(createCodingTools(cwd), this.config)
+    const customToolRuntime = await buildRuntimeCustomTools({
+      config: this.config,
+      browserManager: this.browserManager,
+      secretsManager: this.secretsManager,
+      chatId,
+      agentId,
+      browserProfileId: effectiveBrowserProfileId,
+      browserTarget,
+      reservedToolNames: tools.map((tool) => tool.name),
+    })
+    const customTools = filterConfiguredTools(customToolRuntime.tools, this.config)
+    let modelRound = 0
+    const pendingModelCalls: Array<{ round: number; startedAt: number }> = []
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir: getAgentDir(),
+      extensionFactories: [
+        (pi) => {
+          pi.on('before_provider_request', (event) => {
+            modelRound += 1
+            const round = modelRound
+            pendingModelCalls.push({ round, startedAt: Date.now() })
+            writeModelInvocationLog({
+              event: 'request',
+              invocationId,
+              round,
+              agentId,
+              chatId,
+              model: {
+                provider: model.provider,
+                modelId: model.id,
+                baseUrl: modelConfig.baseUrl || undefined,
+              },
+              session: {
+                resumed: Boolean(existingSessionFile && existsSync(existingSessionFile)),
+                sessionFile: existingSessionFile ?? sessionManager.getSessionFile() ?? null,
+              },
+              payload: event.payload,
+            })
+          })
+        },
+      ],
+    })
+    await resourceLoader.reload()
+
+    logger.info({
       agentId,
       chatId,
-    })
-    queryOptions.mcpServers = mcpServers as Record<string, import('@anthropic-ai/claude-agent-sdk').McpServerConfig>
-
-    // Tool access control (ensure Skill tool is always included)
-    if (this.config.allowedTools) {
-      const tools = [...this.config.allowedTools]
-      if (!tools.includes('Skill')) {
-        tools.push('Skill')
-      }
-      queryOptions.allowedTools = tools
-    }
-    // Always disable SDK built-in cron tools — YouClaw uses IPC-based persistent tasks instead
-    const BUILTIN_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'CronList', 'WebSearch']
-    const disallowed = [
-      ...BUILTIN_DISALLOWED_TOOLS,
-      ...(this.config.disallowedTools ?? []),
-    ]
-    queryOptions.disallowedTools = disallowed
-
-    // Other SDK capabilities
-    if (this.config.maxTurns) {
-      queryOptions.maxTurns = this.config.maxTurns
-    }
+      systemPromptLength: systemPrompt.length,
+      model: model.id,
+      provider: model.provider,
+      isResume: !!existingSessionFile,
+      sessionFile: existingSessionFile ?? sessionManager.getSessionFile(),
+      browserProfileId: effectiveBrowserProfileId,
+      category: 'agent',
+    }, 'Creating agent session')
 
     const queryStartTime = Date.now()
-
-    // Log full query options and env snapshot for debugging
-    logger.debug({
-      agentId, chatId,
-      queryOptions: {
-        model: queryOptions.model,
-        cwd: queryOptions.cwd,
-        systemPromptLength: systemPrompt.length,
-        systemPromptPreview: systemPrompt.slice(0, 200) + (systemPrompt.length > 200 ? '...' : ''),
-        permissionMode: queryOptions.permissionMode,
-        hasResume: !!queryOptions.resume,
-        resumeSessionId: queryOptions.resume || '(new session)',
-        hasAgents: !!queryOptions.agents,
-        hasMcpServers: !!queryOptions.mcpServers,
-        maxTurns: queryOptions.maxTurns || '(default)',
-        allowedTools: queryOptions.allowedTools || '(all)',
-        disallowedTools: queryOptions.disallowedTools || '(none)',
-      },
-      envSnapshot: {
-        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '(not set)',
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice(0, 8) + '***' : '(not set)',
-        ANTHROPIC_CUSTOM_HEADERS: process.env.ANTHROPIC_CUSTOM_HEADERS ? '(set)' : '(not set)',
-        HTTPS_PROXY: process.env.HTTPS_PROXY || process.env.https_proxy || '(not set)',
-        HTTP_PROXY: process.env.HTTP_PROXY || process.env.http_proxy || '(not set)',
-      },
-      category: 'agent',
-    }, 'Full SDK query options and env snapshot')
-
-    // Parse supported office/PDF attachments into the document store before
-    // query so the agent can use stable document tools instead of reading raw
-    // local file paths.
-    const { parsedDocuments, remainingAttachments } = await ingestDocumentAttachments(
-      chatId,
-      attachments,
-      ({ documentId, filename, status, error }) => {
-        this.emitDocumentStatus(agentId, chatId, documentId, filename, status, error, turnId)
-      },
-    )
-
-    // Pre-convert remaining binary documents (DOCX/XLSX/PPTX/PDF) to plain text
-    let processedAttachments = remainingAttachments
-    if (remainingAttachments.length > 0) {
-      processedAttachments = await preprocessAttachments(remainingAttachments)
-    }
-
-    // Append file path hints so the agent can access attached files via its tools
-    let finalUserPrompt = prompt
-    const parsedDocumentsPrompt = buildParsedDocumentsPrompt(parsedDocuments)
-    if (parsedDocumentsPrompt) {
-      finalUserPrompt = (finalUserPrompt || '') + '\n\n' + parsedDocumentsPrompt
-    }
-
-    if (processedAttachments && processedAttachments.length > 0) {
-      const imageFiles = processedAttachments.filter((a) => a.mediaType.startsWith('image/'))
-      const otherFiles = processedAttachments.filter((a) => !a.mediaType.startsWith('image/'))
-
-      const parts: string[] = []
-
-      if (imageFiles.length > 0) {
-        const list = imageFiles.map((a) => `- ${a.filePath} (${a.mediaType})`).join('\n')
-        parts.push(
-          `[Attached images]\n${list}\n` +
-          `**CRITICAL INSTRUCTION**: To analyze these images, you MUST call the \`mcp__minimax__understand_image\` tool with the image file path. ` +
-          `The Read tool CANNOT interpret image content — it will only show raw binary data. ` +
-          `NEVER use Read for image files. ALWAYS use \`mcp__minimax__understand_image\`.`
-        )
-      }
-
-      if (otherFiles.length > 0) {
-        const list = otherFiles.map((a) => `- ${a.filePath} (${a.mediaType}, ${a.filename})`).join('\n')
-        parts.push(`[Attached files]\n${list}\nPlease read these files first before answering.`)
-      }
-
-      finalUserPrompt = (finalUserPrompt || '') + '\n\n' + parts.join('\n\n')
-    }
-
-    const q = query({
-      prompt: finalUserPrompt,
-      options: queryOptions as Parameters<typeof query>[0]['options'],
-    })
-
-    abortRegistry.setQuery(chatId, q as AsyncIterable<unknown> & { close?: () => void })
-
-    // Stream-process SDK messages with first-message timeout
-    logger.info({ agentId, chatId, category: 'agent' }, 'SDK query created, starting to consume messages')
-    let firstMessageReceived = false
-    let firstResponseLogged = false
-    let turnCount = 0
-    const browserDisabledNotice = { sent: false }
-
-    // 60s timeout for first message — if SDK subprocess hangs, fail fast
-    const FIRST_MESSAGE_TIMEOUT_MS = 60_000
-    let firstMessageTimer: ReturnType<typeof setTimeout> | null = null
-    const firstMessagePromise = new Promise<never>((_, reject) => {
-      firstMessageTimer = setTimeout(() => {
-        reject(new Error(`SDK subprocess did not respond within ${FIRST_MESSAGE_TIMEOUT_MS / 1000}s. The model API may be unreachable. (baseUrl: ${process.env.ANTHROPIC_BASE_URL || 'default'})`))
-      }, FIRST_MESSAGE_TIMEOUT_MS)
-    })
-
     try {
-      const iterator = q[Symbol.asyncIterator]()
-      logger.debug({ agentId, chatId, category: 'agent' }, 'SDK async iterator created, waiting for first message')
-      let messageIndex = 0
-      let lastMessageTime = Date.now()
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        // Race between next message and first-message timeout (only before first message)
-        const nextPromise = iterator.next()
-        const result = firstMessageReceived
-          ? await nextPromise
-          : await Promise.race([nextPromise, firstMessagePromise])
-
-        if (result.done) {
-          logger.debug({ agentId, chatId, totalMessages: messageIndex, category: 'agent' }, 'SDK message stream ended')
-          break
-        }
-        const message = result.value
-        const now = Date.now()
-        const gapMs = now - lastMessageTime
-        lastMessageTime = now
-        messageIndex++
-        logger.debug({
-          agentId, chatId,
-          messageType: message.type,
-          messageIndex,
-          gapMs,
-          category: 'agent',
-        }, `SDK message #${messageIndex}: ${message.type}`)
-
-        if (!firstMessageReceived) {
-          firstMessageReceived = true
-          if (firstMessageTimer) {
-            clearTimeout(firstMessageTimer)
-            firstMessageTimer = null
-          }
-        }
-
-        // Log time-to-first-token (TTFT)
-        if (!firstResponseLogged && message.type === 'assistant') {
-          const ttftMs = Date.now() - queryStartTime
-          logger.info({ agentId, chatId, ttftMs, category: 'agent' }, 'SDK first response')
-          firstResponseLogged = true
-        }
-        if (message.type === 'assistant') {
-          turnCount++
-        }
-        await this.handleMessage(message, agentId, chatId, (text) => {
-          fullText += text
-        }, (sid) => {
-          sessionId = sid
-        }, toolUse, turnId, browserDisabled, browserDisabledNotice)
-      }
-    } catch (err) {
-      // User-initiated abort — return partial text gracefully instead of throwing
-      if (abortController.signal.aborted) {
-        logger.info({ agentId, chatId, category: 'agent' }, 'SDK query aborted by user, returning partial text')
-        return { fullText, sessionId, aborted: true, toolUse }
-      }
-
-      // When SDK process crashes, fullText may contain actual error info from upstream API
-      const errMsg = err instanceof Error ? err.message : String(err)
-      const timeSinceStart = Date.now() - queryStartTime
-
-      // Detailed diagnostic logging for SDK subprocess failures
-      logger.error({
-        agentId, chatId,
-        error: errMsg,
-        durationMs: timeSinceStart,
-        firstMessageReceived,
-        cliPath,
-        executable,
-        processExecPath: process.execPath,
+      const { session } = await createAgentSession({
         cwd,
         model,
-        hasApiKey: !!process.env.ANTHROPIC_API_KEY,
-        baseUrl: process.env.ANTHROPIC_BASE_URL || '(default)',
-        resourcesDir: process.env.RESOURCES_DIR || '(not set)',
-        dataDir: process.env.DATA_DIR || '(not set)',
-        platform: process.platform,
-        fullTextPreview: fullText.trim().slice(0, 300) || '(empty)',
-        stderrPreview: stderrOutput.trim().slice(0, 500) || '(empty)',
-        category: 'agent',
-      }, 'SDK query failed — full diagnostic')
+        tools,
+        customTools,
+        resourceLoader,
+        authStorage,
+        sessionManager,
+      })
 
-      // If SDK crashed before producing any output and within 5s, likely a startup issue
-      if (!firstMessageReceived && timeSinceStart < 5000 && /process exited/i.test(errMsg)) {
-        const cliExists = existsSync(cliPath)
-        let hasQuarantine = false
-        if (process.platform === 'darwin' && cliExists) {
-          try {
-            const xattr = execSync(`xattr -l "${cliPath}"`, { timeout: 3000, encoding: 'utf-8' })
-            hasQuarantine = xattr.includes('com.apple.quarantine')
-          } catch { /* no attributes */ }
+      applySystemPromptOverrideToSession(session, systemPrompt)
+
+      const compactionSummaries: CompactionSummary[] = []
+      await this.prepareSessionForPrompt(session, agentId, chatId, model.id, compactionSummaries)
+
+      const browserDisabledNotice = { sent: false }
+      const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+        this.handleSessionEvent(event, agentId, chatId, (text) => {
+          fullText += text
+        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice)
+
+        if (event.type === 'turn_end') {
+          const current = pendingModelCalls.shift()
+          if (!current) return
+          const responseText = this.extractAssistantText(event.message)
+          writeModelInvocationLog({
+            event: 'response',
+            invocationId,
+            round: current.round,
+            agentId,
+            chatId,
+            model: {
+              provider: model.provider,
+              modelId: model.id,
+              baseUrl: modelConfig.baseUrl || undefined,
+            },
+            session: {
+              resumed: Boolean(existingSessionFile && existsSync(existingSessionFile)),
+              sessionFile: session.sessionManager.getSessionFile() ?? existingSessionFile ?? null,
+            },
+            payload: event.message,
+            responseText,
+            result: {
+              durationMs: Date.now() - current.startedAt,
+              outputLength: responseText.length,
+            },
+          })
         }
-        logger.error({
-          cliPath, cliExists, hasQuarantine,
-          timeSinceStart,
-          category: 'agent',
-        }, 'SDK subprocess failed immediately — possible quarantine or missing binary')
+      })
+
+      const promptWithFallback = (!existingSessionFile || !existsSync(existingSessionFile))
+        ? this.buildRecoveredPrompt(chatId, prompt)
+        : prompt
+      const fileAttachments = attachments
+        ?.filter((attachment) => typeof attachment.filePath === 'string' && attachment.filePath.length > 0)
+        .map((attachment) => ({
+          filename: attachment.filename,
+          mediaType: attachment.mediaType,
+          filePath: attachment.filePath!,
+        })) ?? []
+      const { parsedDocuments, remainingAttachments } = await ingestDocumentAttachments(
+        chatId,
+        fileAttachments,
+        (event) => this.emitDocumentStatus(agentId, chatId, event.documentId, event.filename, event.status, event.error, turnId),
+      )
+      const promptWithDocuments = parsedDocuments.length > 0
+        ? `${promptWithFallback}\n\n${buildParsedDocumentsPrompt(parsedDocuments)}`.trim()
+        : promptWithFallback
+      const processedAttachments = remainingAttachments.length > 0
+        ? await preprocessAttachments(remainingAttachments)
+        : []
+      const promptWithAttachments = this.appendAttachmentInstructions(promptWithDocuments, processedAttachments)
+      const remainingAttachmentPaths = new Set(remainingAttachments.map((attachment) => attachment.filePath).filter(Boolean))
+      const promptImages = this.collectPromptImages(attachments, remainingAttachmentPaths)
+
+      abortController.signal.addEventListener('abort', () => {
+        session.abort().catch(() => {})
+      }, { once: true })
+
+      try {
+        try {
+          if (promptImages.length > 0) {
+            await session.prompt(promptWithAttachments, { images: promptImages })
+          } else {
+            await session.prompt(promptWithAttachments)
+          }
+        } catch (err) {
+          if (abortController.signal.aborted) {
+            logger.info({ agentId, chatId, category: 'agent' }, 'Agent session aborted by user, returning partial text')
+            const finalSessionId = session.sessionManager.getSessionId()
+            const finalSessionFile = session.sessionManager.getSessionFile() ?? null
+            saveSession(agentId, chatId, finalSessionId, finalSessionFile)
+            const current = pendingModelCalls[0]
+            if (current) {
+              writeModelInvocationLog({
+                event: 'error',
+                invocationId,
+                round: current.round,
+                agentId,
+                chatId,
+                model: {
+                  provider: model.provider,
+                  modelId: model.id,
+                  baseUrl: modelConfig.baseUrl || undefined,
+                },
+                session: {
+                  resumed: Boolean(existingSessionFile && existsSync(existingSessionFile)),
+                  sessionFile: finalSessionFile,
+                },
+                result: {
+                  durationMs: Date.now() - current.startedAt,
+                  outputLength: fullText.length,
+                  sessionId: finalSessionId,
+                  sessionFile: finalSessionFile,
+                },
+                error: {
+                  message: 'aborted',
+                  partialOutput: fullText,
+                },
+              })
+            }
+            return {
+              fullText,
+              sessionId: finalSessionId,
+              sessionFile: finalSessionFile,
+              aborted: true,
+              toolUse,
+            }
+          }
+          const current = pendingModelCalls[0]
+          writeModelInvocationLog({
+            event: 'error',
+            invocationId,
+            round: current?.round,
+            agentId,
+            chatId,
+            model: {
+              provider: model.provider,
+              modelId: model.id,
+              baseUrl: modelConfig.baseUrl || undefined,
+            },
+            session: {
+              resumed: Boolean(existingSessionFile && existsSync(existingSessionFile)),
+              sessionFile: session.sessionManager.getSessionFile() ?? existingSessionFile ?? null,
+            },
+            result: {
+              durationMs: current ? Date.now() - current.startedAt : Date.now() - queryStartTime,
+              outputLength: fullText.length,
+            },
+            error: {
+              message: err instanceof Error ? err.message : String(err),
+              partialOutput: fullText,
+            },
+          })
+          throw err
+        }
+
+        const sessionError = getLatestAssistantError(session.sessionManager.getEntries())
+        if (sessionError) {
+          throw new Error(sessionError)
+        }
+      } finally {
+        unsubscribe()
       }
 
-      // Append fullText or stderr to the error message so humanizeError can match specific error types
-      if (fullText.trim() || stderrOutput.trim()) {
-        const detail = fullText.trim() || stderrOutput.trim()
-        throw new Error(`${errMsg} | upstream_response: ${detail.slice(0, 500)}`)
+      this.finalizeSession(agentId, chatId, session, model.id, compactionSummaries)
+
+      const finalSessionId = session.sessionManager.getSessionId()
+      const finalSessionFile = session.sessionManager.getSessionFile() ?? null
+
+      const durationMs = Date.now() - queryStartTime
+      logger.info({
+        agentId,
+        chatId,
+        totalDurationMs: durationMs,
+        finalSessionId,
+        finalSessionFile,
+        category: 'agent',
+      }, 'Agent session finished')
+
+      return {
+        fullText,
+        sessionId: finalSessionId,
+        sessionFile: finalSessionFile,
+        aborted: false,
+        toolUse,
       }
-      throw err
     } finally {
-      if (firstMessageTimer) {
-        clearTimeout(firstMessageTimer)
-      }
+      await customToolRuntime.dispose()
       abortRegistry.unregister(chatId)
     }
-
-    logger.info({
-      agentId, chatId,
-      totalTurns: turnCount,
-      totalDurationMs: Date.now() - queryStartTime,
-      category: 'agent',
-    }, 'SDK query finished')
-
-    return { fullText, sessionId, aborted: false, toolUse }
   }
 
   /**
-   * Handle an SDK message
+   * Handle a pi-mono session event and map to YouClaw EventBus events.
    */
-  private async handleMessage(
-    message: SDKMessage,
+  private handleSessionEvent(
+    event: AgentSessionEvent,
     agentId: string,
     chatId: string,
     appendText: (text: string) => void,
-    setSessionId: (sid: string) => void,
+    compactionSummaries: CompactionSummary[],
     toolUseHistory: AgentToolUse[],
     turnId: string | undefined,
     browserDisabled = false,
-    browserDisabledNotice: { sent: boolean },
-  ): Promise<void> {
-    switch (message.type) {
-      case 'assistant': {
-        // Extract session_id
-        if (message.session_id) {
-          setSessionId(message.session_id)
+    browserDisabledNotice: { sent: boolean } = { sent: false },
+  ): void {
+    switch (event.type) {
+      case 'message_update': {
+        const assistantEvent = event.assistantMessageEvent
+        if (assistantEvent.type === 'text_delta') {
+          appendText(assistantEvent.delta)
+          this.emitStream(agentId, chatId, assistantEvent.delta, turnId)
+        }
+        break
+      }
+
+      case 'tool_execution_start': {
+        const logger = getLogger()
+        logger.info({
+          agentId,
+          chatId,
+          tool: event.toolName,
+          input: JSON.stringify(event.args).slice(0, 500),
+          category: 'tool_use',
+        }, `Tool call: ${event.toolName}`)
+
+        const disabledBrowserReason = this.getDisabledBrowserToolBlockReason(event.toolName, event.args, browserDisabled)
+        if (disabledBrowserReason && !browserDisabledNotice.sent) {
+          browserDisabledNotice.sent = true
+          const message = this.buildDisabledBrowserUserMessage(disabledBrowserReason)
+          appendText(message)
+          this.emitStream(agentId, chatId, message, turnId)
         }
 
-        // Extract text and tool_use blocks from assistant message
-        for (const block of message.message.content) {
-          if (block.type === 'text') {
-            appendText(block.text)
-            this.emitStream(agentId, chatId, block.text, turnId)
-          } else if (block.type === 'tool_use') {
-            const disabledBrowserReason = this.getDisabledBrowserToolBlockReason(block.name, block.input, browserDisabled)
-            if (disabledBrowserReason) {
-              if (!browserDisabledNotice.sent) {
-                browserDisabledNotice.sent = true
-                const message = this.buildDisabledBrowserUserMessage(disabledBrowserReason)
-                appendText(message)
-                this.emitStream(agentId, chatId, message, turnId)
-              }
-              continue
+        toolUseHistory.push({
+          id: `tool:${turnId ?? 'turnless'}:${toolUseHistory.length + 1}`,
+          name: event.toolName,
+          input: JSON.stringify(event.args).slice(0, 200),
+          status: 'done',
+        })
+
+        if (this.hooksManager) {
+          this.hooksManager.execute(agentId, 'pre_tool_use', {
+            agentId,
+            chatId,
+            phase: 'pre_tool_use',
+            payload: { tool: event.toolName, input: event.args },
+          }).then((ctx) => {
+            if (ctx.abort) {
+              this.emitStream(agentId, chatId, `\n[Tool ${event.toolName} blocked by hook: ${ctx.abortReason ?? 'unknown reason'}]\n`, turnId)
             }
-            // pre_tool_use hook
-            if (this.hooksManager) {
-              const preCtx = await this.hooksManager.execute(agentId, 'pre_tool_use', {
-                agentId,
-                chatId,
-                phase: 'pre_tool_use',
-                payload: { tool: block.name, input: block.input },
-              })
-              if (preCtx.abort) {
-                this.emitStream(agentId, chatId, `\n[Tool ${block.name} blocked by hook: ${preCtx.abortReason ?? 'unknown reason'}]\n`, turnId)
-                continue
-              }
-            }
-            const logger = getLogger()
-            logger.info({
-              agentId, chatId,
-              tool: block.name,
-              input: JSON.stringify(block.input).slice(0, 500),
-              category: 'tool_use',
-            }, `Tool call: ${block.name}`)
-            toolUseHistory.push({
-              id: `tool:${turnId ?? 'turnless'}:${toolUseHistory.length + 1}`,
-              name: block.name,
-              input: JSON.stringify(block.input).slice(0, 200),
-              status: 'done',
-            })
-            this.emitToolUse(agentId, chatId, block.name, block.input, turnId)
-          }
+          }).catch(() => {
+            // Hook errors should not affect main flow.
+          })
         }
+
+        this.emitToolUse(agentId, chatId, event.toolName, event.args, turnId)
         break
       }
 
-      case 'result': {
-        if (message.session_id) {
-          setSessionId(message.session_id)
+      case 'auto_compaction_end':
+        if (event.result?.summary) {
+          compactionSummaries.push({ summary: event.result.summary, trigger: 'auto' })
         }
         break
-      }
 
-      // Sub-agent system message handling
-      case 'system': {
-        this.handleSystemMessage(message, agentId, chatId)
+      case 'agent_end':
+      case 'auto_compaction_start':
         break
-      }
     }
   }
 
@@ -1157,7 +711,6 @@ export class AgentRuntime {
     if (toolName === 'Skill' && payload.skill === 'agent-browser') {
       return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
     }
-
     if (toolName === 'Bash' && typeof payload.command === 'string' && /\bagent-browser\b/.test(payload.command)) {
       return 'If this task is blocked by login, CAPTCHA, or site verification, ask the user to switch the chat browser setting from "None" to a browser profile and retry.'
     }
@@ -1166,119 +719,199 @@ export class AgentRuntime {
   }
 
   private buildDisabledBrowserUserMessage(reason: string): string {
-    return `This chat is currently set to "No browser". ${reason}`
+    return `Browser automation is currently disabled for this request. ${reason}`
   }
 
-  /**
-   * Handle SDK system messages (sub-agent events)
-   */
-  private handleSystemMessage(
-    message: SDKMessage & { type: 'system' },
+  private buildRecoveredPrompt(chatId: string, prompt: string): string {
+    const limit = this.config.memory?.historyFallbackMessages ?? 12
+    if (limit <= 0) return prompt
+
+    const messages = getMessages(chatId, limit + 4).reverse().map((message) => ({
+      content: message.content ?? '',
+      isBotMessage: message.is_bot_message === 1,
+    }))
+
+    return buildRecoveredConversationPrompt(messages, prompt, limit)
+  }
+
+  private shouldCompactSession(sessionFile: string | undefined | null): boolean {
+    const maxSessionBytes = this.config.memory?.maxSessionBytes ?? 262144
+    if (!sessionFile || maxSessionBytes <= 0 || !existsSync(sessionFile)) {
+      return false
+    }
+
+    try {
+      return statSync(sessionFile).size > maxSessionBytes
+    } catch {
+      return false
+    }
+  }
+
+  private async prepareSessionForPrompt(
+    session: AgentSession,
     agentId: string,
     chatId: string,
-  ): void {
-    const msg = message as Record<string, unknown>
-    const subtype = msg.subtype as string | undefined
+    modelId: string,
+    compactionSummaries: CompactionSummary[],
+  ): Promise<void> {
+    if (!this.shouldCompactSession(session.sessionManager.getSessionFile())) {
+      return
+    }
 
-    switch (subtype) {
-      case 'task_started': {
-        const taskId = String(msg.taskId ?? '')
-        const description = String(msg.description ?? '')
-        this.eventBus.emit({
-          type: 'subagent_started',
-          agentId,
-          chatId,
-          taskId,
-          description,
-        })
-        break
+    const logger = getLogger()
+    try {
+      const previousSessionFile = session.sessionManager.getSessionFile()
+      const previousSessionId = session.sessionManager.getSessionId()
+      const result = await session.compact(COMPACTION_MEMORY_INSTRUCTIONS)
+      if (result.summary) {
+        compactionSummaries.push({ summary: result.summary, trigger: 'manual', sessionId: previousSessionId })
       }
-      case 'task_progress': {
-        const taskId = String(msg.taskId ?? '')
-        const summary = msg.summary ? String(msg.summary) : undefined
-        this.eventBus.emit({
-          type: 'subagent_progress',
-          agentId,
-          chatId,
-          taskId,
-          summary,
-        })
-        break
-      }
-      case 'task_notification': {
-        const taskId = String(msg.taskId ?? '')
-        const status = String(msg.status ?? 'completed')
-        const summary = String(msg.summary ?? '')
-        this.eventBus.emit({
-          type: 'subagent_completed',
-          agentId,
-          chatId,
-          taskId,
-          status,
-          summary,
-        })
-        break
-      }
+      session.sessionManager.newSession({ parentSession: previousSessionFile ?? undefined })
+    } catch (err) {
+      logger.warn({ agentId, chatId, error: err instanceof Error ? err.message : String(err) }, 'Failed to compact oversized session before prompt')
+    }
+  }
+
+  private finalizeSession(
+    agentId: string,
+    chatId: string,
+    session: AgentSession,
+    modelId: string,
+    compactionSummaries: CompactionSummary[],
+  ): void {
+    const previousSessionFile = session.sessionManager.getSessionFile()
+    const sessionId = session.sessionManager.getSessionId()
+
+    for (const item of compactionSummaries.splice(0)) {
+      this.memoryManager?.saveSessionSummary(agentId, chatId, item.sessionId ?? sessionId, item.summary, {
+        trigger: item.trigger,
+        model: modelId,
+      })
+    }
+
+    if (!this.shouldCompactSession(previousSessionFile)) {
+      return
+    }
+
+    try {
+      session.sessionManager.newSession({ parentSession: previousSessionFile ?? undefined })
+    } catch (err) {
+      getLogger().warn({ agentId, chatId, error: err instanceof Error ? err.message : String(err) }, 'Failed to roll over session after prompt')
     }
   }
 
   /**
-   * Convert SDK internal errors to user-readable messages with error codes.
-   * Order matters: specific errors first, generic fallback (process exited) last.
+   * Convert errors to user-readable messages with error codes.
    */
   private humanizeError(raw: string): { message: string; errorCode: ErrorCode } {
-    // Pass through raw message directly for unrecognized/upstream errors — no humanization needed
-    if (/request interrupted by user/i.test(raw)) {
-      return { message: raw, errorCode: ErrorCode.UNKNOWN }
+    const normalizedRaw = normalizeAssistantErrorMessage(raw) ?? raw
+
+    if (/request interrupted by user/i.test(raw) || /request was aborted/i.test(normalizedRaw)) {
+      return { message: normalizedRaw, errorCode: ErrorCode.UNKNOWN }
     }
-    // Insufficient credits (highest priority — triggers top-up dialog)
-    if (/insufficient|credit|balance|quota|insufficient_credits/i.test(raw)) {
+    if (/returned an empty response|empty response/i.test(raw) || /returned an empty response|empty response/i.test(normalizedRaw)) {
+      return {
+        message: 'Model returned an empty response. Please check MODEL_PROVIDER, MODEL_ID, MODEL_BASE_URL, and model authentication.',
+        errorCode: ErrorCode.MODEL_CONNECTION_FAILED,
+      }
+    }
+    if (/insufficient|credit|balance|quota|insufficient_credits/i.test(raw) || /insufficient|credit|balance|quota|insufficient_credits/i.test(normalizedRaw)) {
       return { message: 'Insufficient credits or API quota. Please check your account balance.', errorCode: ErrorCode.INSUFFICIENT_CREDITS }
     }
-    // Built-in model auth (user not logged in or token expired)
-    if (/not logged in|please log in/i.test(raw)) {
+    if (/not logged in|please log in/i.test(raw) || /not logged in|please log in/i.test(normalizedRaw)) {
       return { message: 'Please log in to use built-in models.', errorCode: ErrorCode.AUTH_FAILED }
     }
-    // API authentication failure (401, invalid key/token)
-    if (/unauthorized|authentication_error|invalid.*token|invalid.*key|\b401\b/i.test(raw)) {
+    if (/unauthorized|authentication_error|invalid.*token|invalid.*key|\b401\b/i.test(raw) || /unauthorized|authentication_error|invalid.*token|invalid.*key|\b401\b/i.test(normalizedRaw)) {
       return { message: 'Model authentication failed. Please check your API Key in Settings → Models.', errorCode: ErrorCode.AUTH_FAILED }
     }
-    // Rate limiting
-    if (/rate.?limit|too many requests|429/i.test(raw)) {
+    if (/rate.?limit|too many requests|429/i.test(raw) || /rate.?limit|too many requests|429/i.test(normalizedRaw)) {
       return { message: 'Request rate limited. Please try again later.', errorCode: ErrorCode.RATE_LIMITED }
     }
-    // Network error
-    if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw)) {
+    if (/ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(raw) || /ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(normalizedRaw)) {
       return { message: 'Cannot reach the model API. Please check your network connection and Base URL.', errorCode: ErrorCode.NETWORK_ERROR }
     }
-    // Server error (5xx from proxy/API)
-    if (/\b50[0-9]\b|server error|bad gateway|service unavailable/i.test(raw)) {
+    if (/\b50[0-9]\b|server error|bad gateway|service unavailable/i.test(raw) || /\b50[0-9]\b|server error|bad gateway|service unavailable/i.test(normalizedRaw)) {
       return { message: 'The model API returned a server error. This is usually temporary — please retry.', errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
     }
-    if (/requires git-bash|git.?bash|CLAUDE_CODE_GIT_BASH_PATH|bash\.exe/i.test(raw)) {
-      return {
-        message: 'Windows is missing Git Bash required by Claude SDK. Please install Git from the startup dialog (Install button) or https://git-scm.com/download/win, then restart YouClaw.',
-        errorCode: ErrorCode.MODEL_CONNECTION_FAILED,
-      }
-    }
-    // Windows SDK subprocess crash — hint about Node.js
-    if (process.platform === 'win32' && /process exited with code/i.test(raw) && !/upstream_response/i.test(raw)) {
-      return {
-        message: 'Agent process failed to start on Windows. Please ensure Node.js is installed (https://nodejs.org). If already installed, please check the logs for details.',
-        errorCode: ErrorCode.MODEL_CONNECTION_FAILED,
-      }
-    }
-    // SDK process crash (fallback — last to avoid masking specific errors in upstream_response)
-    if (/process exited with code/i.test(raw)) {
-      // Extract upstream_response detail if available
-      const upstreamMatch = raw.match(/upstream_response:\s*(.{1,200})/) as RegExpMatchArray | null
-      const detail = upstreamMatch?.[1] ? ` (${upstreamMatch[1].trim()})` : ''
-      return { message: `Model process exited unexpectedly${detail}. This may be a temporary issue — please retry.`, errorCode: ErrorCode.MODEL_CONNECTION_FAILED }
-    }
-    return { message: raw, errorCode: ErrorCode.UNKNOWN }
+    return { message: normalizedRaw, errorCode: ErrorCode.UNKNOWN }
   }
 
-  // --- Emit helper methods ---
+  private appendAttachmentInstructions(
+    prompt: string,
+    attachments: Array<{ filename: string; mediaType: string; filePath: string }>,
+  ): string {
+    if (attachments.length === 0) {
+      return prompt
+    }
+
+    const parts: string[] = []
+    const imageFiles = attachments.filter((attachment) => attachment.mediaType.startsWith('image/'))
+    const otherFiles = attachments.filter((attachment) => !attachment.mediaType.startsWith('image/'))
+
+    if (imageFiles.length > 0) {
+      const list = imageFiles
+        .map((attachment) => `- ${attachment.filePath} (${attachment.mediaType}, ${attachment.filename})`)
+        .join('\n')
+      parts.push(`[Attached images]\n${list}\nImage files are attached at these local paths.`)
+    }
+
+    if (otherFiles.length > 0) {
+      const list = otherFiles
+        .map((attachment) => `- ${attachment.filePath} (${attachment.mediaType}, ${attachment.filename})`)
+        .join('\n')
+      parts.push(`[Attached files]\n${list}\nPlease read these files before answering.`)
+    }
+
+    if (parts.length === 0) {
+      return prompt
+    }
+
+    return `${prompt}\n\n${parts.join('\n\n')}`.trim()
+  }
+
+  private collectPromptImages(
+    attachments: RuntimeAttachment[] | undefined,
+    remainingAttachmentPaths: Set<string>,
+  ): Array<{ type: 'image'; data: string; mimeType: string }> {
+    if (!attachments || attachments.length === 0) {
+      return []
+    }
+
+    return attachments
+      .filter((attachment) => {
+        if (!attachment.mediaType.startsWith('image/')) return false
+        if (typeof attachment.data !== 'string' || attachment.data.length === 0) return false
+        if (!attachment.filePath) return true
+        return remainingAttachmentPaths.has(attachment.filePath)
+      })
+      .map((attachment) => ({
+        type: 'image' as const,
+        data: attachment.data!,
+        mimeType: attachment.mediaType,
+      }))
+  }
+
+  private extractAssistantText(message: unknown): string {
+    if (!message || typeof message !== 'object') {
+      return ''
+    }
+
+    const content = (message as { content?: unknown }).content
+    if (!Array.isArray(content)) {
+      return ''
+    }
+
+    return content
+      .map((part) => {
+        if (!part || typeof part !== 'object') return ''
+        const typedPart = part as { type?: unknown; text?: unknown }
+        return typedPart.type === 'text' && typeof typedPart.text === 'string'
+          ? typedPart.text
+          : ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
 
   private emitProcessing(agentId: string, chatId: string, isProcessing: boolean, turnId?: string): void {
     this.eventBus.emit({ type: 'processing', agentId, chatId, isProcessing, turnId })
@@ -1319,4 +952,109 @@ export class AgentRuntime {
       turnId,
     })
   }
+}
+
+export function getBunRuntimeDir(): string | null {
+  const runtimeDir = resolve(process.cwd(), 'src-tauri', 'resources', 'bun-runtime')
+  return existsSync(runtimeDir) ? runtimeDir : null
+}
+
+export function ensureBunRuntime(): string | null {
+  const runtimeDir = getBunRuntimeDir()
+  if (!runtimeDir) return null
+
+  const executable = resolve(runtimeDir, process.platform === 'win32' ? 'bun.exe' : 'bun')
+  return existsSync(executable) ? executable : null
+}
+
+function getLatestAssistantMessage(entries: SessionEntry[]): AssistantSessionMessage | null {
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index]
+    if (!entry) continue
+    if (entry.type !== 'message') continue
+
+    const message = entry.message as AssistantSessionMessage
+    if (message.role === 'assistant') {
+      return message
+    }
+  }
+
+  return null
+}
+
+function combineErrorParts(summary: string | null, detail: string | null): string | null {
+  if (summary && detail && summary !== detail) {
+    return `${summary}: ${detail}`
+  }
+  return detail ?? summary
+}
+
+function extractStructuredErrorMessage(value: Record<string, unknown>): string | null {
+  const summary = typeof value.error === 'string'
+    ? value.error.trim() || null
+    : extractNestedErrorMessage(value.error)
+  const detail = extractNestedErrorMessage(value.message ?? value.errorMessage ?? value.detail)
+
+  return combineErrorParts(summary, detail)
+}
+
+function extractNestedErrorMessage(value: unknown): string | null {
+  if (!value) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  if (typeof value !== 'object') return null
+
+  return extractStructuredErrorMessage(value as Record<string, unknown>)
+}
+
+export function normalizeAssistantErrorMessage(raw: string | undefined, stopReason?: string): string | null {
+  const trimmed = raw?.trim()
+  if (trimmed) {
+    const jsonStart = trimmed.indexOf('{')
+    if (jsonStart >= 0) {
+      const prefix = trimmed.slice(0, jsonStart).trim().replace(/[:\s]+$/, '')
+      const jsonText = trimmed.slice(jsonStart)
+      try {
+        const parsed = JSON.parse(jsonText)
+        const nested = extractNestedErrorMessage(parsed)
+        if (nested && prefix && prefix !== nested) {
+          return `${prefix}: ${nested}`
+        }
+        if (nested) return nested
+      } catch {
+        // Fall through to the raw message when the provider returned non-JSON text.
+      }
+    }
+
+    return extractNestedErrorMessage(trimmed) ?? trimmed
+  }
+
+  if (stopReason === 'aborted') {
+    return 'Request was aborted.'
+  }
+  if (stopReason === 'error') {
+    return 'Model returned an error without details.'
+  }
+
+  return null
+}
+
+export function getLatestAssistantError(entries: SessionEntry[]): string | null {
+  const message = getLatestAssistantMessage(entries)
+  if (!message) return null
+
+  const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
+  const normalized = normalizeAssistantErrorMessage(message.errorMessage, stopReason)
+  if (stopReason === 'error' || stopReason === 'aborted') {
+    return normalized
+  }
+
+  const hasTextContent = message.content?.some((item) => item.type === 'text' && typeof item.text === 'string' && item.text.trim().length > 0) ?? false
+  if (!hasTextContent && normalized) {
+    return normalized
+  }
+
+  return null
 }

@@ -42,7 +42,7 @@ import {
   getRegistrySourceInfo,
   resolveMarketplaceSort,
 } from '@/lib/registry-source'
-import { useAppStore } from '@/stores/app'
+import { notify, useAppRuntimeStore } from '@/stores/app'
 
 type TabType = 'installed' | 'marketplace'
 type InstalledWorkspace =
@@ -51,11 +51,10 @@ type InstalledWorkspace =
 
 export function Skills() {
   const { t, locale } = useI18n()
-  const registrySource = useAppStore((state) => state.registrySource)
-  const registrySources = useAppStore((state) => state.registrySources)
-  const setRegistrySource = useAppStore((state) => state.setRegistrySource)
-  const refreshRegistrySources = useAppStore((state) => state.refreshRegistrySources)
-  const showGlobalBubble = useAppStore((state) => state.showGlobalBubble)
+  const registrySource = useAppRuntimeStore((state) => state.registrySource)
+  const registrySources = useAppRuntimeStore((state) => state.registrySources)
+  const setRegistrySource = useAppRuntimeStore((state) => state.setRegistrySource)
+  const refreshRegistrySources = useAppRuntimeStore((state) => state.refreshRegistrySources)
   const [tab, setTab] = useState<TabType>('installed')
   const [installedWorkspace, setInstalledWorkspace] = useState<InstalledWorkspace>({ kind: 'detail', skillName: null })
 
@@ -347,22 +346,21 @@ export function Skills() {
             try {
               await toggleSkill(skillName, enabled)
               await refreshInstalledData()
-              showGlobalBubble({
-                message: formatSkillMessage(
+              notify.success(
+                formatSkillMessage(
                   enabled ? t.skills.skillEnabledSuccess : t.skills.skillDisabledSuccess,
                   skillName,
                 ),
-              })
+              )
             } catch (error) {
-              showGlobalBubble({
-                type: 'error',
-                message: error instanceof Error && error.message
+              notify.error(
+                error instanceof Error && error.message
                   ? error.message
                   : formatSkillMessage(
                     enabled ? t.skills.skillEnableFailed : t.skills.skillDisableFailed,
                     skillName,
                   ),
-              })
+              )
             }
           }}
           onDeleteSkill={(skillName) => setDeleteTarget(skillName)}
@@ -463,16 +461,13 @@ export function Skills() {
                   await deleteSkill(skillName)
                   setInstalledWorkspace({ kind: 'detail', skillName: null })
                   await refreshInstalledData()
-                  showGlobalBubble({
-                    message: formatSkillMessage(t.skills.skillDeleteSuccess, skillName),
-                  })
+                  notify.success(formatSkillMessage(t.skills.skillDeleteSuccess, skillName))
                 } catch (error) {
-                  showGlobalBubble({
-                    type: 'error',
-                    message: error instanceof Error && error.message
+                  notify.error(
+                    error instanceof Error && error.message
                       ? error.message
                       : formatSkillMessage(t.skills.skillDeleteFailed, skillName),
-                  })
+                  )
                 }
                 closeDeleteDialog()
               }}

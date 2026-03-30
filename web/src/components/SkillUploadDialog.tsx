@@ -12,7 +12,7 @@ import {
 import { useI18n } from '@/i18n'
 import { extractDuplicateSkillName } from '@/lib/skill-import'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import { FileArchive, FolderOpen, Loader2, Upload, X } from 'lucide-react'
 
 function isZipFile(file: File): boolean {
@@ -29,7 +29,6 @@ export function SkillUploadDialog({
   onUploaded: () => void | Promise<void>
 }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppStore((state) => state.showGlobalBubble)
   const zipInputRef = useRef<HTMLInputElement | null>(null)
   const [actionStatus, setActionStatus] = useState<'idle' | 'folder' | 'archive'>('idle')
   const [actionError, setActionError] = useState('')
@@ -54,18 +53,15 @@ export function SkillUploadDialog({
       await runner()
       await onUploaded()
       onOpenChange(false)
-      showGlobalBubble({ message: t.skills.uploadSuccess })
+      notify.success(t.skills.uploadSuccess)
     } catch (error) {
       const message = getUploadErrorMessage(error, t)
       setActionError(message)
-      showGlobalBubble({
-        type: 'error',
-        message,
-      })
+      notify.error(message)
     } finally {
       setActionStatus('idle')
     }
-  }, [onOpenChange, onUploaded, showGlobalBubble, t])
+  }, [onOpenChange, onUploaded, t])
 
   const handleDirectoryPick = useCallback(async () => {
     if (!isTauri || actionStatus !== 'idle') {
@@ -99,17 +95,14 @@ export function SkillUploadDialog({
 
     if (!isZipFile(file)) {
       setActionError(t.skills.uploadInvalidArchive)
-      showGlobalBubble({
-        type: 'error',
-        message: t.skills.uploadInvalidArchive,
-      })
+      notify.error(t.skills.uploadInvalidArchive)
       return
     }
 
     await runUpload('archive', file.name, async () => {
       await installSkillFromArchive(file)
     })
-  }, [actionStatus, runUpload, showGlobalBubble, t.skills.uploadInvalidArchive])
+  }, [actionStatus, runUpload, t.skills.uploadInvalidArchive])
 
   const busy = actionStatus !== 'idle'
 

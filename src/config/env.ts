@@ -6,15 +6,15 @@ import { BUILD_CONSTANTS } from './build-constants.ts'
 
 // Model-related keys: always read from .env file, ignoring user's system env vars
 const DOTENV_OVERRIDE_KEYS = new Set([
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_AUTH_TOKEN', // Anthropic SDK compatible field, equivalent to ANTHROPIC_API_KEY
-  'ANTHROPIC_BASE_URL',
-  'AGENT_MODEL',
+  'MODEL_PROVIDER',
+  'MODEL_ID',
+  'MODEL_API_KEY',
+  'MODEL_BASE_URL',
 ])
 
 /**
  * Manually load .env file into process.env.
- * Model-related keys (ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, AGENT_MODEL)
+ * Model-related keys (MODEL_PROVIDER, MODEL_ID, MODEL_API_KEY, MODEL_BASE_URL)
  * always override system env vars to avoid picking up user shell config.
  * Other keys do not override existing env vars.
  */
@@ -59,11 +59,12 @@ function loadDotEnv(): void {
 }
 
 const envSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_BASE_URL: z.string().optional(),
+  MODEL_PROVIDER: z.string().default('minimax'),
+  MODEL_ID: z.string().default('MiniMax-M2.7-highspeed'),
+  MODEL_API_KEY: z.string().optional(),
+  MODEL_BASE_URL: z.string().optional(),
   PORT: z.coerce.number().default(62601),
   DATA_DIR: z.string().default('./data'),
-  AGENT_MODEL: z.string().default('minimax/MiniMax-M2.7-highspeed'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   FEISHU_APP_ID: z.string().optional(),
@@ -95,31 +96,28 @@ export function loadEnv(): EnvConfig {
   // Node.js/tsx does not auto-load .env; load manually
   loadDotEnv()
 
-  // Read preferred_port from Tauri Store (desktop mode)
-  // Store preferred_port takes priority over .env PORT
-  try {
-    const home = process.env.HOME || process.env.USERPROFILE || ''
-    const platform = process.platform
-    let storeDir: string
-    if (platform === 'darwin') {
-      storeDir = resolve(home, 'Library/Application Support/com.youclaw.app')
-    } else if (platform === 'win32') {
-      storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.youclaw.app')
-    } else {
-      storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.youclaw.app')
+  // Desktop release sidecar may override PORT from the persisted preferred_port.
+  // Dev runs should only respect .env so local development stays deterministic.
+  if (process.env.YOUCLAW_USE_PREFERRED_PORT === '1') {
+    try {
+      const home = process.env.HOME || process.env.USERPROFILE || ''
+      const platform = process.platform
+      let storeDir: string
+      if (platform === 'darwin') {
+        storeDir = resolve(home, 'Library/Application Support/com.youclaw.app')
+      } else if (platform === 'win32') {
+        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.youclaw.app')
+      } else {
+        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.youclaw.app')
+      }
+      const storeFile = resolve(storeDir, 'settings.json')
+      const storeContent = JSON.parse(readFileSync(storeFile, 'utf-8'))
+      if (storeContent.preferred_port) {
+        process.env.PORT = storeContent.preferred_port
+      }
+    } catch {
+      // Store not found (first launch), fall back to .env PORT
     }
-    const storeFile = resolve(storeDir, 'settings.json')
-    const storeContent = JSON.parse(readFileSync(storeFile, 'utf-8'))
-    if (storeContent.preferred_port) {
-      process.env.PORT = storeContent.preferred_port
-    }
-  } catch {
-    // Store not found (web mode or first launch), fall back to .env PORT
-  }
-
-  // ANTHROPIC_AUTH_TOKEN is equivalent to ANTHROPIC_API_KEY, unify to ANTHROPIC_API_KEY
-  if (!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_AUTH_TOKEN) {
-    process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_AUTH_TOKEN
   }
 
   // Build-time constant injection: build-sidecar.mjs generates build-constants.ts
@@ -141,8 +139,8 @@ export function loadEnv(): EnvConfig {
 
   _config = result.data
 
-  if (!_config.ANTHROPIC_API_KEY) {
-    console.warn('ANTHROPIC_API_KEY not set. Agent features will be unavailable. Please configure the API Key in settings.')
+  if (!_config.YOUCLAW_BUILTIN_AUTH_TOKEN && !_config.MODEL_API_KEY) {
+    console.warn('MODEL_API_KEY not set. Agent features will be unavailable unless built-in auth is configured.')
   }
 
   return _config

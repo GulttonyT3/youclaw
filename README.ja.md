@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Claude Agent SDK をベースにしたデスクトップ AI Assistant</strong>
+  <strong>マルチプロバイダー対応 coding agent runtime ベースのデスクトップ AI Assistant</strong>
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@
 | ランタイム / パッケージ管理 | [Bun](https://bun.sh/) |
 | デスクトップシェル | [Tauri 2](https://tauri.app/)（Rust） |
 | バックエンド | Hono + bun:sqlite + Pino |
-| Agent | `@anthropic-ai/claude-agent-sdk` |
+| Agent | `@mariozechner/pi-coding-agent` + `@mariozechner/pi-ai` |
 | フロントエンド | Vite + React + shadcn/ui + Tailwind CSS |
 | チャネル | grammY（Telegram）· `dingtalk-stream`（DingTalk）· `@larksuiteoapi/node-sdk`（Feishu）· QQ · WeCom |
 | スケジュールタスク | croner |
@@ -87,7 +87,7 @@
 │   ┌──────────────┐    ┌────────────────────────────┐ │
 │   │   WebView     │    │   Bun Sidecar              │ │
 │   │  Vite+React   │◄──►  Hono API Server           │ │
-│   │  shadcn/ui    │ HTTP│  Claude Agent SDK         │ │
+│   │  shadcn/ui    │ HTTP│  Multi-provider Agent RT  │ │
 │   │               │ SSE │  bun:sqlite               │ │
 │   └──────────────┘    └────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
@@ -125,7 +125,7 @@
 
 - [Bun](https://bun.sh/) >= 1.1
 - [Rust](https://rustup.rs/)（Tauri デスクトップアプリのビルドに必要）
-- [Anthropic API key](https://console.anthropic.com/) ひとつ
+- 使用するモデルプロバイダーの API key
 
 ### セットアップ
 
@@ -139,7 +139,7 @@ cd web && bun install && cd ..
 
 # 環境変数を設定
 cp .env.example .env
-# .env を編集して ANTHROPIC_API_KEY を設定
+# .env を編集して MODEL_API_KEY を設定
 ```
 
 ### Web モード
@@ -188,11 +188,12 @@ bun test:e2e:ui      # UI 付きで E2E テストを実行
 
 | 変数 | 必須 | デフォルト | 説明 |
 |------|------|------------|------|
-| `ANTHROPIC_API_KEY` | はい | — | Anthropic API key |
-| `ANTHROPIC_BASE_URL` | いいえ | — | カスタム API Base URL |
+| `MODEL_PROVIDER` | いいえ | `builtin` | デフォルトのモデルプロバイダーまたは実行モード |
+| `MODEL_ID` | いいえ | `minimax/MiniMax-M2.7-highspeed` | デフォルトのモデル参照 |
+| `MODEL_API_KEY` | はい | — | モデル API key |
+| `MODEL_BASE_URL` | いいえ | — | カスタムモデル API Base URL |
 | `PORT` | いいえ | `62601` | バックエンドサーバーポート |
-| `DATA_DIR` | いいえ | `./data` | データ保存ディレクトリ |
-| `AGENT_MODEL` | いいえ | `claude-sonnet-4-6` | デフォルトの Claude モデル |
+| `DATA_DIR` | いいえ | 開発時は `./data`、デスクトップ本番では `~/.youclaw` | データ保存ディレクトリ。開発でユーザーホーム配下に分けたい場合は `DATA_DIR=~/.youclaw-dev` を明示設定してください |
 | `LOG_LEVEL` | いいえ | `info` | ログレベル |
 | `TELEGRAM_BOT_TOKEN` | いいえ | — | Telegram チャネルを有効化 |
 | `DINGTALK_CLIENT_ID` | いいえ | — | DingTalk アプリ Client ID |
@@ -228,13 +229,13 @@ src/
 ├── events/         # EventBus（stream/tool_use/complete/error）
 ├── ipc/            # Agent とメインプロセス間のファイルポーリング IPC
 ├── logger/         # Pino ロガー
-├── memory/         # Agent ごとの MEMORY.md と会話ログ
+├── memory/         # ルート MEMORY.md と Agent ごとのログ/アーカイブ用メモリ補助
 ├── routes/         # Hono API ルート（/api/*）
 ├── scheduler/      # Cron/interval/once タスクスケジューラ
 ├── skills/         # スキルローダー、ウォッチャー、frontmatter パーサ
 src-tauri/
 ├── src/            # Rust メインプロセス（sidecar、window、tray、updater）
-agents/             # Agent 設定（agent.yaml + SOUL.md + skills/）
+agents/             # Agent ワークスペース（agent.yaml + bootstrap 文書 + MEMORY.md + skills/）
 skills/             # プロジェクトレベルのスキル（SKILL.md 形式）
 e2e/                # E2E テスト（Playwright）
 web/src/

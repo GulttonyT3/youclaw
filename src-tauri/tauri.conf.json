@@ -49,7 +49,6 @@
       "../skills/**/*",
       "../prompts/**/*",
       "../src/browser/playwright-runner.js",
-      "../node_modules/@anthropic-ai/claude-agent-sdk/cli.js",
       "../node_modules/playwright-core/**/*"
     ],
     "macOS": {

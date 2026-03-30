@@ -25,8 +25,8 @@ import { RegistrySourceSelect } from '@/components/RegistrySourceSelect'
 import { MarketplaceVirtualList } from '@/components/skills/MarketplaceVirtualList'
 import { useMarketplaceFeed } from '@/hooks/useMarketplaceFeed'
 import { toMarketplaceCardViewModel, toMarketplaceInstallDialogViewModel } from '@/lib/marketplace-view-model'
+import { notify, useAppRuntimeStore } from '@/stores/app'
 import { resolveMarketplaceActionSource } from '@/lib/registry-source'
-import { useAppStore } from '@/stores/app'
 import { useDragRegion } from "@/hooks/useDragRegion"
 import {
   AgentMarketplaceSkillState,
@@ -82,10 +82,14 @@ type SubAgentsMap = Record<string, SubAgentDef>
 
 // Document file list and icon descriptions
 const DOC_FILES = [
+  { name: 'AGENTS.md', label: 'Agents', desc: 'Workspace Rules & Standing Orders' },
   { name: 'SOUL.md', label: 'Soul', desc: 'Personality & Style' },
-  { name: 'AGENT.md', label: 'Agent', desc: 'Capabilities & Rules' },
+  { name: 'IDENTITY.md', label: 'Identity', desc: 'Agent Identity & Role' },
   { name: 'USER.md', label: 'User', desc: 'User Info & Preferences' },
   { name: 'TOOLS.md', label: 'Tools', desc: 'Tool Notes & APIs' },
+  { name: 'MEMORY.md', label: 'Memory', desc: 'Agent-Specific Long-Term Memory' },
+  { name: 'HEARTBEAT.md', label: 'Heartbeat', desc: 'Lightweight Maintenance Guidance' },
+  { name: 'BOOTSTRAP.md', label: 'Bootstrap', desc: 'First-Run Workspace Notes' },
 ] as const
 
 type ViewMode = 'detail' | 'create'
@@ -208,7 +212,6 @@ export function Agents() {
   }
 
   const selectedAgent = agents.find((a) => a.id === selected)
-
   // Save document
   const handleSaveDoc = async () => {
     if (!selected || !editingDoc) return
@@ -826,13 +829,11 @@ function AgentSkillsSection({
   allSkills: Skill[]
   onUpdate: () => void
 }) {
-  const { t } = useI18n()
-  const registrySource = useAppStore((s) => s.registrySource)
-  const registrySources = useAppStore((s) => s.registrySources)
-  const locale = useAppStore((s) => s.locale)
-  const setRegistrySource = useAppStore((s) => s.setRegistrySource)
-  const refreshRegistrySources = useAppStore((s) => s.refreshRegistrySources)
-  const showGlobalBubble = useAppStore((s) => s.showGlobalBubble)
+  const { t, locale } = useI18n()
+  const registrySource = useAppRuntimeStore((s) => s.registrySource)
+  const registrySources = useAppRuntimeStore((s) => s.registrySources)
+  const setRegistrySource = useAppRuntimeStore((s) => s.setRegistrySource)
+  const refreshRegistrySources = useAppRuntimeStore((s) => s.refreshRegistrySources)
   const [search, setSearch] = useState('')
 
   // Marketplace dialog state
@@ -946,10 +947,7 @@ function AgentSkillsSection({
       const actionSource = resolveActionSource()
       const result = await installRecommendedSkill({ slug: skill.slug, source: actionSource })
       if (!result.ok) {
-        showGlobalBubble({
-          type: 'error',
-          message: formatActionError(result.error, t.skills.installFailed),
-        })
+        notify.error(formatActionError(result.error, t.skills.installFailed))
         return
       }
 
@@ -966,14 +964,9 @@ function AgentSkillsSection({
       }
       markMarketplaceSkillInstalled(skill.slug, newSkill?.name)
       onUpdate()
-      showGlobalBubble({
-        message: buildMarketplaceMessage(t.skills.marketplaceInstallSuccess, skill.displayName),
-      })
+      notify.success(buildMarketplaceMessage(t.skills.marketplaceInstallSuccess, skill.displayName))
     } catch (error) {
-      showGlobalBubble({
-        type: 'error',
-        message: formatActionError(error instanceof Error ? error.message : undefined, t.skills.installFailed),
-      })
+      notify.error(formatActionError(error instanceof Error ? error.message : undefined, t.skills.installFailed))
     } finally {
       setInstallingSlug(null)
     }

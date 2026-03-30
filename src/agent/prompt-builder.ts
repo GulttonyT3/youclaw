@@ -6,20 +6,35 @@ import { getLogger } from '../logger/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { AgentConfig } from './types.ts'
-import type { BrowserDriver } from '../browser/index.ts'
+import { getOrLoadBootstrapDocs } from './bootstrap-cache.ts'
+import type { BrowserDriver, BrowserTarget } from '../browser/index.ts'
 
-// Workspace MD file loading order
-const WORKSPACE_FILES = ['SOUL.md', 'USER.md', 'AGENT.md', 'TOOLS.md'] as const
+const WORKSPACE_FILES = [
+  { filename: 'AGENTS.md' },
+  { filename: 'SOUL.md' },
+  { filename: 'TOOLS.md' },
+  { filename: 'IDENTITY.md' },
+  { filename: 'USER.md' },
+  { filename: 'HEARTBEAT.md' },
+  { filename: 'BOOTSTRAP.md' },
+] as const
+
+type LoadedWorkspaceDoc = {
+  filePath: string
+  content: string
+}
 
 export class PromptBuilder {
   constructor(
     private skillsLoader: SkillsLoader | null,
     private memoryManager: MemoryManager | null,
-  ) {}
+  ) {
+    void this.skillsLoader
+  }
 
   /**
-   * Build the complete system prompt
-   * Loading order: SOUL.md -> USER.md -> AGENT.md -> TOOLS.md -> Memory -> Env
+   * Build the complete system prompt.
+   * Loading order: workspace docs -> browser -> skills -> memory -> env -> channel.
    */
   build(
     workspaceDir: string,
@@ -28,8 +43,11 @@ export class PromptBuilder {
       agentId: string
       chatId: string
       requestedSkills?: string[]
+      skillsPrompt?: string
+      memoryContext?: string
       browserProfileId?: string
       browserDisabled?: boolean
+      browserTarget?: BrowserTarget
       browserProfile?: {
         id: string
         driver: BrowserDriver
@@ -39,26 +57,39 @@ export class PromptBuilder {
   ): string {
     const parts: string[] = []
 
-    // Memory file absolute paths
     const agentMemoryDir = resolve(workspaceDir, 'memory')
-    const agentMemoryPath = resolve(agentMemoryDir, 'MEMORY.md')
+    const agentMemoryPath = resolve(workspaceDir, 'MEMORY.md')
     const globalMemoryPath = resolve(getPaths().agents, '_global', 'memory', 'MEMORY.md')
+    const agentId = context?.agentId ?? 'default'
 
-    // Load workspace MD files in order
-    for (const filename of WORKSPACE_FILES) {
-      let content = this.loadMdFile(workspaceDir, filename)
-      if (content) {
-        // Replace memory path placeholders with absolute paths
-        content = content
-          .replaceAll('{{agentMemoryDir}}', agentMemoryDir)
-          .replaceAll('{{agentMemoryPath}}', agentMemoryPath)
-          .replaceAll('{{globalMemoryPath}}', globalMemoryPath)
-        parts.push(content)
+    const workspaceDocs = context?.chatId
+      ? getOrLoadBootstrapDocs({
+          cacheKey: this.getBootstrapCacheKey(agentId, context.chatId),
+          loader: () => this.loadWorkspaceDocs(workspaceDir, {
+            agentMemoryDir,
+            agentMemoryPath,
+            globalMemoryPath,
+          }),
+        })
+      : this.loadWorkspaceDocs(workspaceDir, {
+          agentMemoryDir,
+          agentMemoryPath,
+          globalMemoryPath,
+        })
+
+    if (workspaceDocs.length > 0) {
+      parts.push(
+        '## Workspace Files (injected)',
+        'These user-editable files are loaded from the agent workspace and included below in Project Context.',
+        '',
+        '# Project Context',
+        '',
+      )
+
+      for (const doc of workspaceDocs) {
+        parts.push(`## ${doc.filePath}`, '', doc.content, '')
       }
-    }
-
-    // If workspace has no MD files, fall back to global system.md
-    if (parts.length === 0) {
+    } else {
       const fallback = this.loadGlobalSystemPrompt()
       if (fallback) {
         parts.push(fallback)
@@ -68,11 +99,11 @@ export class PromptBuilder {
     if (context?.browserDisabled) {
       parts.push(
         `## Browser Policy\n` +
-        `Browser use is explicitly disabled for this chat. ` +
+        `Browser use is explicitly disabled for this request. ` +
         `Do NOT use the built-in \`mcp__browser__*\` tools. ` +
         `Do NOT invoke the legacy \`agent-browser\` skill and do NOT run \`agent-browser\` from Bash. ` +
         `Solve the task without browser automation by default. ` +
-        `If web search, WebFetch, or other non-browser methods are blocked by login walls, CAPTCHA, 2FA, device verification, bot checks, or other site verification, stop trying browser tools and reply with a short, user-facing explanation that browser mode is currently off and can be enabled by switching this chat from "None" to a browser profile, then retrying in browser mode.`
+        `If web search, WebFetch, or other non-browser methods are blocked by login walls, CAPTCHA, 2FA, device verification, bot checks, or other site verification, stop trying browser tools and reply with a short, user-facing explanation that browser mode is currently off and can be enabled by configuring a browser profile for this agent or request, then retrying in browser mode.`
       )
     } else if (context?.browserProfileId) {
       const fallbackHint = context.browserProfile?.driver === 'managed' && context.browserProfile.userDataDir
@@ -85,7 +116,10 @@ export class PromptBuilder {
       parts.push(
         `## Browser Tools\n` +
         `This chat is connected to browser profile "${context.browserProfileId}". ` +
-        `Prefer the built-in \`mcp__browser__*\` tools for common browser interaction: status, list_tabs, open_tab, navigate, snapshot, screenshot, click, type, press_key, and close_tab.\n` +
+        `Browser tools for this chat are routed to target "${context.browserTarget ?? 'host'}". ` +
+        `Prefer the built-in \`mcp__browser__*\` tools for common browser interaction: status, list_tabs, open_tab, navigate, snapshot, act, screenshot, click, type, press_key, and close_tab.\n` +
+        `For page interaction, prefer taking a fresh \`snapshot\` first and then using \`act\` with element refs returned by the snapshot. Use raw CSS selector tools only as a fallback when ref-based interaction is insufficient.\n` +
+        `If the current browser target reports that it is not implemented, do not keep retrying the same browser tool calls blindly. Explain the limitation briefly and continue with another approach when possible.\n` +
         `Use the legacy \`agent-browser\` skill only when you need capabilities not yet covered by the built-in browser tools, such as interactive element refs, explicit waits, select/check, get text, PDF export, visual diff, or state import/export.\n` +
         `Manual login is the default and recommended flow for sites that require authentication. Do NOT ask the user for credentials, passwords, 2FA codes, recovery codes, or session secrets. Ask the user to sign in manually in the browser profile instead.\n` +
         `Automated login attempts often trigger anti-bot or account-security defenses. If the site shows CAPTCHA, 2FA, device verification, suspicious-login prompts, or other security checks, stop automated login attempts and ask the user to take over manually.\n` +
@@ -95,19 +129,23 @@ export class PromptBuilder {
       )
     }
 
-    // Inject memory context
-    if (this.memoryManager && context) {
-      const memoryConfig = config.memory
+    const skillsSection = this.buildSkillsSection(context?.skillsPrompt)
+    if (skillsSection) {
+      parts.push(skillsSection)
+    }
+
+    if (context?.memoryContext) {
+      parts.push(context.memoryContext)
+    } else if (this.memoryManager && context && config.memory?.enabled !== false) {
       const memoryContext = this.memoryManager.getMemoryContext(context.agentId, {
-        recentDays: memoryConfig?.recentDays,
-        maxContextChars: memoryConfig?.maxContextChars,
+        recentDays: config.memory?.recentDays,
+        maxContextChars: config.memory?.maxContextChars,
       })
       if (memoryContext) {
         parts.push(memoryContext)
       }
     }
 
-    // Inject environment context
     const envContext = this.buildEnvContext()
     if (envContext) {
       parts.push(envContext)
@@ -118,7 +156,6 @@ export class PromptBuilder {
       parts.push(channelContext)
     }
 
-    // Inject image tool usage rule (built-in minimax MCP is always available)
     parts.push(
       `## Image Handling Rule\n` +
       `When the user sends or references image files (jpg, png, gif, webp, bmp, svg, etc.), you MUST use the \`mcp__minimax__understand_image\` tool to analyze them.\n` +
@@ -135,12 +172,11 @@ export class PromptBuilder {
 
     parts.push(
       `## Scheduled Task Rule\n` +
-      `Use \`mcp__task__list_tasks\` to inspect existing tasks and always call it before any write operation.\n` +
-      `Use \`mcp__task__update_task\` for create/update/pause/resume/delete actions.\n` +
-      `Do NOT use file-based IPC JSON for task management.`
+      `Use \`mcp__task__list_tasks\` and \`mcp__task__update_task\` for persistent scheduled tasks.\n` +
+      `Always call \`mcp__task__list_tasks\` before any \`mcp__task__update_task\` write operation.\n` +
+      `Do NOT rely on built-in session-only cron/task tools or write raw IPC task files manually.`
     )
 
-    // Inject current context (needed when agent creates scheduled tasks)
     if (context) {
       parts.push(
         `\n## Current Context\n- Agent ID: ${context.agentId}\n- Chat ID: ${context.chatId}`,
@@ -150,45 +186,70 @@ export class PromptBuilder {
     return parts.join('\n\n')
   }
 
-  /**
-   * Load workspace MD file, skip if missing (no error)
-   */
-  private loadMdFile(workspaceDir: string, filename: string): string | null {
-    const filePath = resolve(workspaceDir, filename)
+  private loadWorkspaceDocs(
+    workspaceDir: string,
+    replacements: Record<string, string>,
+  ): LoadedWorkspaceDoc[] {
+    const loaded: LoadedWorkspaceDoc[] = []
 
-    if (existsSync(filePath)) {
+    for (const spec of WORKSPACE_FILES) {
+      const filePath = resolve(workspaceDir, spec.filename)
+      if (!existsSync(filePath)) continue
+
       try {
-        const content = readFileSync(filePath, 'utf-8').trim()
-        if (content) {
-          getLogger().debug({ filename, source: 'workspace' }, 'Prompt file loaded')
-          return content
+        let content = readFileSync(filePath, 'utf-8').trim()
+        if (!content) continue
+
+        for (const [key, value] of Object.entries(replacements)) {
+          content = content.replaceAll(`{{${key}}}`, value)
         }
+
+        getLogger().debug({ filename: spec.filename, source: 'workspace' }, 'Prompt file loaded')
+        loaded.push({ filePath, content })
       } catch (err) {
-        getLogger().warn({ filename, error: err instanceof Error ? err.message : String(err) }, 'Failed to read prompt file')
+        getLogger().warn(
+          { filename: spec.filename, error: err instanceof Error ? err.message : String(err) },
+          'Failed to read prompt file',
+        )
       }
     }
 
-    return null
+    return loaded
   }
 
-  /**
-   * Fall back to global prompts/system.md
-   */
+  private getBootstrapCacheKey(agentId: string, chatId: string): string {
+    return `${agentId}:${chatId}`
+  }
+
+  private buildSkillsSection(skillsPrompt?: string): string | null {
+    const trimmed = skillsPrompt?.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    return [
+      '## Skills (mandatory)',
+      'Before replying: scan <available_skills> <description> entries.',
+      '- If exactly one skill clearly applies: read its SKILL.md at <location> with `Read`, then follow it.',
+      '- If multiple could apply: choose the most specific one, then read/follow it.',
+      '- If none clearly apply: do not read any SKILL.md.',
+      'Constraints: never read more than one skill up front; only read after selecting.',
+      '- When a skill drives external API writes, assume rate limits: prefer fewer larger writes, avoid tight one-item loops, serialize bursts when possible, and respect 429/Retry-After.',
+      trimmed,
+    ].join('\n')
+  }
+
   private loadGlobalSystemPrompt(): string | null {
     const systemPath = resolve(getPaths().prompts, 'system.md')
-    if (existsSync(systemPath)) {
-      try {
-        return readFileSync(systemPath, 'utf-8').trim()
-      } catch {
-        return null
-      }
+    if (!existsSync(systemPath)) return null
+
+    try {
+      return readFileSync(systemPath, 'utf-8').trim()
+    } catch {
+      return null
     }
-    return null
   }
 
-  /**
-   * Build environment context (dynamically generated from prompts/env.md template)
-   */
   private buildEnvContext(): string | null {
     const envPath = resolve(getPaths().prompts, 'env.md')
     if (!existsSync(envPath)) return null
@@ -196,7 +257,6 @@ export class PromptBuilder {
     try {
       let envPrompt = readFileSync(envPath, 'utf-8')
       envPrompt = envPrompt
-        .replace('{{date}}', new Date().toISOString().split('T')[0]!)
         .replace('{{os}}', process.platform)
         .replace('{{platform}}', process.arch)
         .replace('{{cwd}}', process.cwd())
@@ -205,28 +265,6 @@ export class PromptBuilder {
       return null
     }
   }
-  private buildChannelContext(chatId?: string): string | null {
-    if (!chatId) return null
-
-    const channel = inferChannelType(chatId)
-    if (channel !== 'wechat-personal') return null
-
-    const recipientId = this.parseWechatPersonalPeerId(chatId)
-    if (!recipientId) return null
-
-    return [
-      '## Channel Context',
-      '',
-      '- Current channel: wechat-personal',
-      `- Current recipient WeChat ID: ${recipientId}`,
-      '- This channel supports sending text, images, and files back to the current user.',
-      '- To send an image or file, use the `mcp__message__send_to_current_chat` tool and set `media` to an absolute local file path or an HTTPS URL.',
-      '- To send plain text back to the user without media, use the `mcp__message__send_to_current_chat` tool with `text`.',
-      '- For the current conversation, do not claim that WeChat cannot send images or files. Send them directly with `mcp__message__send_to_current_chat` instead.',
-      '- You normally do not need to set `to` manually for the current conversation recipient.',
-      '- If you generate or save a file before sending it, always use an absolute path such as `/tmp/example.png`.',
-    ].join('\n')
-  }
 
   private buildChannelContext(chatId?: string): string | null {
     if (!chatId) return null
@@ -250,6 +288,7 @@ export class PromptBuilder {
       '- If you generate or save a file before sending it, always use an absolute path such as `/tmp/example.png`.',
     ].join('\n')
   }
+
   private parseWechatPersonalPeerId(chatId: string): string | null {
     if (!chatId.startsWith('wxp:')) return null
     const rest = chatId.slice(4)

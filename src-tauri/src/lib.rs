@@ -227,11 +227,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
     let mut env_vars: Vec<(String, String)> = vec![];
     env_vars.push(("PORT".into(), port.to_string()));
-
-    // Set data directory
-    if let Some(app_data) = app.path().app_data_dir().ok() {
-        env_vars.push(("DATA_DIR".into(), app_data.to_string_lossy().to_string()));
-    }
+    env_vars.push(("YOUCLAW_USE_PREFERRED_PORT".into(), "1".into()));
 
     // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder/Explorer)
     {
@@ -279,7 +275,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 env_vars.push(("CLAUDE_CODE_GIT_BASH_PATH".into(), git_bash_path.clone()));
                 add_windows_git_paths(&mut extra_paths, &git_bash_path);
             } else {
-                log::warn!("Git Bash not found on Windows — claude-agent-sdk shell commands may fail");
+                log::warn!("Git Bash not found on Windows — shell commands may fail");
             }
         } else {
             // Resolve nvm's actual node bin path (nvm does not create ~/.nvm/current)
@@ -710,23 +706,19 @@ pub fn run() {
                 }
                 #[cfg(debug_assertions)]
                 {
-                    // Dev mode: prefer preferred_port from Store, then PORT from .env, then default
-                    port = app_handle.store("settings.json").ok()
-                        .and_then(|store| store.get("preferred_port"))
-                        .and_then(|v| v.as_str().and_then(|s| s.parse::<u16>().ok()))
-                        .or_else(|| {
-                            std::fs::read_to_string(
-                                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
-                            )
-                            .ok()
-                            .and_then(|content| {
-                                content.lines()
-                                    .find(|l| l.starts_with("PORT="))
-                                    .and_then(|l| l.strip_prefix("PORT="))
-                                    .and_then(|v| v.trim().parse::<u16>().ok())
-                            })
-                        })
-                        .unwrap_or(62601);
+                    // Dev mode: use .env PORT, then default.
+                    // Do not reuse the persisted preferred_port from the desktop app.
+                    port = std::fs::read_to_string(
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
+                    )
+                    .ok()
+                    .and_then(|content| {
+                        content.lines()
+                            .find(|l| l.starts_with("PORT="))
+                            .and_then(|l| l.strip_prefix("PORT="))
+                            .and_then(|v| v.trim().parse::<u16>().ok())
+                    })
+                    .unwrap_or(62601);
 
                     log::info!("Dev mode: skipping sidecar, using bun dev server on port {}", port);
                 }

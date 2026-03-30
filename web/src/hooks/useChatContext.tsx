@@ -12,41 +12,27 @@ import {
   getBrowserProfiles,
   type BrowserProfileDTO,
 } from "../api/client";
-import { getItem, setItem } from "@/lib/storage";
 import { ChatContext } from "./chatCtx";
+import { useAppPreferencesStore } from "@/stores/app";
 import { useChatStore } from "@/stores/chat";
-import { sseManager } from "@/lib/sse-manager";
+import { socketManager } from "@/lib/socket-manager";
 import type { ChatItem } from "@/lib/chat-utils";
-
-const LAST_AGENT_KEY = "last-agent-id";
 
 type Agent = { id: string; name: string };
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [agentId, setAgentId] = useState("default");
+  const agentId = useAppPreferencesStore((s) => s.lastAgentId);
+  const setAgentId = useAppPreferencesStore((s) => s.setLastAgentId);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [chatList, setChatList] = useState<ChatItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [browserProfiles, setBrowserProfiles] = useState<BrowserProfileDTO[]>(
     [],
   );
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null,
-  );
-  const [ready, setReady] = useState(false);
 
   const activeChatState = useActiveChatState();
   const actions = useChatActions(agentId);
 
-  // Async load last agentId on startup
-  useEffect(() => {
-    getItem(LAST_AGENT_KEY).then((saved) => {
-      if (saved) setAgentId(saved);
-      setReady(true);
-    });
-  }, []);
-
-  // Load agents
   const refreshAgents = useCallback(() => {
     getAgents()
       .then((list) => {
@@ -58,9 +44,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             return a.name.localeCompare(b.name);
           });
         setAgents(sorted);
+
+        if (sorted.length === 0) return;
+        if (sorted.some((agent) => agent.id === agentId)) return;
+
+        const fallbackAgentId =
+          sorted.find((agent) => agent.id === "default")?.id ?? sorted[0]!.id;
+        setAgentId(fallbackAgentId);
       })
       .catch(() => {});
-  }, []);
+  }, [agentId, setAgentId]);
 
   useEffect(() => {
     refreshAgents();
@@ -72,19 +65,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // Load browser profiles
   useEffect(() => {
     refreshBrowserProfiles();
   }, [refreshBrowserProfiles]);
 
-  // Load chat list
   const refreshChats = useCallback(() => {
     getChats()
       .then(setChatList)
       .catch(() => {});
   }, []);
 
-  // Refresh on active chat change
   const activeChatId = useChatStore((s) => s.activeChatId);
   const activeChatListItem = activeChatId
     ? chatList.find((chat) => chat.chat_id === activeChatId) ?? null
@@ -92,11 +82,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const currentChatAgentId =
     activeChatState?.boundAgentId ?? activeChatListItem?.agent_id ?? null;
   const canChangeAgent = !activeChatId;
+
   useEffect(() => {
     refreshChats();
   }, [activeChatId, refreshChats]);
 
-  // Debounced refresh on chat updates (completeMessage, addUserMessage)
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = onChatUpdate(() => {
@@ -112,27 +102,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshChats]);
 
-  // Connect system SSE for real-time channel events (new_chat, inbound_message)
   useEffect(() => {
-    sseManager.connectSystem();
-    const unsubscribe = sseManager.onNewChat(() => {
+    socketManager.connect();
+    const unsubscribe = socketManager.onNewChat(() => {
       refreshChats();
     });
     return () => {
       unsubscribe();
-      sseManager.disconnectSystem();
+      socketManager.disconnect();
     };
   }, [refreshChats]);
-
-  // Persist agentId
-  useEffect(() => {
-    if (ready) setItem(LAST_AGENT_KEY, agentId);
-  }, [agentId, ready]);
 
   const deleteChat = useCallback(
     async (chatIdToDelete: string) => {
       await deleteChatApi(chatIdToDelete);
-      sseManager.disconnect(chatIdToDelete);
       useChatStore.getState().removeChat(chatIdToDelete);
       refreshChats();
     },
@@ -178,8 +161,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         refreshAgents,
         browserProfiles,
         refreshBrowserProfiles,
-        selectedProfileId,
-        setSelectedProfileId,
       }}
     >
       {children}

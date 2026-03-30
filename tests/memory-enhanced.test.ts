@@ -19,7 +19,7 @@ function getAgentMemoryDir(agentId: string) {
 }
 
 function getMemoryFile(agentId: string) {
-  return resolve(getAgentMemoryDir(agentId), 'MEMORY.md')
+  return resolve(getPaths().agents, agentId, 'MEMORY.md')
 }
 
 function getLogsDir(agentId: string) {
@@ -71,7 +71,7 @@ describe('MemoryManager enhanced features', () => {
     expect(context1).not.toContain('day10')
   })
 
-  test('default recentDays=3', () => {
+  test('default recentDays=2', () => {
     const agentId = createAgentId('mem-default-days')
     mkdirSync(getLogsDir(agentId), { recursive: true })
     writeFileSync(getMemoryFile(agentId), '')
@@ -83,7 +83,7 @@ describe('MemoryManager enhanced features', () => {
     const context = memoryManager.getMemoryContext(agentId)
     expect(context).toContain('day11')
     expect(context).toContain('day10')
-    expect(context).toContain('day9')
+    expect(context).not.toContain('day9')
     expect(context).not.toContain('day8')
   })
 
@@ -189,5 +189,19 @@ describe('MemoryManager enhanced features', () => {
     const contentB = memoryManager.getArchivedConversation(agentId, 'web:chat-1', 'session-b')
     expect(contentA).toContain('A')
     expect(contentB).toContain('B')
+  })
+
+  test('session summaries are included in memory context', () => {
+    const agentId = createAgentId('mem-summary')
+    mkdirSync(getAgentMemoryDir(agentId), { recursive: true })
+    writeFileSync(getMemoryFile(agentId), 'stable facts')
+
+    memoryManager.saveSessionSummary(agentId, 'web:chat-1', 'session-1', 'Summary A')
+    memoryManager.saveSessionSummary(agentId, 'web:chat-1', 'session-2', 'Summary B')
+
+    const context = memoryManager.getMemoryContext(agentId, { recentDays: 2, maxContextChars: 2000 })
+    expect(context).toContain('<session_summaries>')
+    expect(context).toContain('Summary A')
+    expect(context).toContain('Summary B')
   })
 })

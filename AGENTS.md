@@ -6,7 +6,7 @@ The Bun backend lives in [`src/`](/Users/jerry/Program/ATA/YouClaw/src), organiz
 ## Build, Test, and Development Commands
 Use Bun for both workspaces.
 
-- `bun run dev`: start the backend with hot reload on port `PORT` (default `3000`).
+- `bun run dev`: start the backend with hot reload on port `PORT` (default `62601`).
 - `bun run start`: run the backend without hot reload.
 - `bun run dev:web`: start the frontend dev server from `web/`.
 - `bun test`: run the Bun test suite.
@@ -24,4 +24,4 @@ Tests use `bun:test`. Name files `*.test.ts` and prefer colocated tests for tigh
 Follow the existing Conventional Commit style seen in history: `feat(skills): ...`, `refactor: ...`, `docs: ...`. Keep commits focused and scoped to one concern. PRs should include a short summary, impacted areas (`backend`, `web`, `agents`, `skills`), linked issues when applicable, and screenshots for UI changes. List the commands you ran, and explicitly call out any pre-existing lint/typecheck failures that are outside your diff.
 
 ## Security & Configuration Tips
-Required env: `ANTHROPIC_API_KEY`. Common optional vars: `PORT`, `DATA_DIR`, `AGENT_MODEL`, `LOG_LEVEL`, and `TELEGRAM_BOT_TOKEN`. Do not commit secrets or generated runtime data from `data/`.
+Required env: `MODEL_API_KEY`. Common optional vars: `MODEL_PROVIDER`, `MODEL_ID`, `MODEL_BASE_URL`, `PORT`, `DATA_DIR`, `LOG_LEVEL`, and `TELEGRAM_BOT_TOKEN`. Do not commit secrets or generated runtime data from `data/`.

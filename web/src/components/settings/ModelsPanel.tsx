@@ -1,16 +1,23 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { openExternal } from "@/api/transport"
 import { useI18n } from "@/i18n"
 import { getOfficialDocsUrl } from "@/lib/external-links"
 import { cn } from "@/lib/utils"
 import { Plus, Pencil, Trash2, Check, Settings2, Cloud, Cpu, ExternalLink } from "lucide-react"
-import { getSettings, updateSettings as apiUpdateSettings, type SettingsDTO, type CustomModelDTO } from "@/api/client"
-import { useAppStore } from "@/stores/app"
+import {
+  ActiveModelProvider,
+  getSettings,
+  updateSettings as apiUpdateSettings,
+  type SettingsDTO,
+  type CustomModelDTO,
+} from "@/api/client"
+import { useAppRuntimeStore } from "@/stores/app"
 
 // Built-in model definitions
 const BUILTIN_MODELS = [
@@ -22,19 +29,135 @@ const BUILTIN_MODELS = [
 ] as const
 
 const CUSTOM_MODEL_DOCS_URL = getOfficialDocsUrl('custom-models')
-
-interface ActiveModel {
-  provider: "builtin" | "custom" | "cloud"
-  id?: string
+const CUSTOM_MODEL_PROVIDER_META: Record<CustomModelDTO['provider'], { label: string; defaultBaseUrl: string; modelIdExample?: string }> = {
+  anthropic: {
+    label: 'Anthropic',
+    defaultBaseUrl: 'https://api.anthropic.com',
+    modelIdExample: 'claude-sonnet-4-6',
+  },
+  openai: {
+    label: 'OpenAI',
+    defaultBaseUrl: 'https://api.openai.com',
+    modelIdExample: 'gpt-4.1',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com',
+    modelIdExample: 'gemini-2.5-flash',
+  },
+  minimax: {
+    label: 'MiniMax',
+    defaultBaseUrl: 'https://api.minimax.io/anthropic',
+    modelIdExample: 'MiniMax-M2.5-highspeed',
+  },
+  'minimax-cn': {
+    label: 'MiniMax CN',
+    defaultBaseUrl: '',
+    modelIdExample: 'MiniMax-M2.5-highspeed',
+  },
+  glm: {
+    label: 'GLM',
+    defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    modelIdExample: 'glm-4.6',
+  },
+  deepseek: {
+    label: 'DeepSeek',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    modelIdExample: 'deepseek-chat',
+  },
+  qwen: {
+    label: 'Qwen',
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    modelIdExample: 'qwen-max',
+  },
+  moonshot: {
+    label: 'Moonshot',
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
+    modelIdExample: 'kimi-k2-0711-preview',
+  },
+  doubao: {
+    label: 'Doubao',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    modelIdExample: 'doubao-seed-1-6-thinking-250715',
+  },
+  siliconflow: {
+    label: 'SiliconFlow',
+    defaultBaseUrl: 'https://api.siliconflow.cn/v1',
+    modelIdExample: 'deepseek-ai/DeepSeek-V3',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    modelIdExample: 'openai/gpt-4.1-mini',
+  },
+  groq: {
+    label: 'Groq',
+    defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    modelIdExample: 'llama-3.3-70b-versatile',
+  },
+  xai: {
+    label: 'xAI',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    modelIdExample: 'grok-4',
+  },
+  mistral: {
+    label: 'Mistral',
+    defaultBaseUrl: 'https://api.mistral.ai',
+    modelIdExample: 'mistral-large-latest',
+  },
+  together: {
+    label: 'Together AI',
+    defaultBaseUrl: 'https://api.together.xyz/v1',
+    modelIdExample: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+  },
+  fireworks: {
+    label: 'Fireworks AI',
+    defaultBaseUrl: 'https://api.fireworks.ai/inference/v1',
+    modelIdExample: 'accounts/fireworks/models/deepseek-v3',
+  },
+  ollama: {
+    label: 'Ollama',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    modelIdExample: 'qwen3:8b',
+  },
+  custom: {
+    label: 'Custom',
+    defaultBaseUrl: '',
+    modelIdExample: 'my-proxy/model-name',
+  },
 }
+
+const CUSTOM_MODEL_PROVIDER_OPTIONS: Array<{ value: CustomModelDTO['provider']; label: string }> = [
+  'anthropic',
+  'openai',
+  'gemini',
+  'glm',
+  'deepseek',
+  'qwen',
+  'moonshot',
+  'doubao',
+  'siliconflow',
+  'openrouter',
+  'groq',
+  'xai',
+  'mistral',
+  'together',
+  'fireworks',
+  'ollama',
+  'minimax',
+  'minimax-cn',
+  'custom',
+].map((value) => ({ value, label: CUSTOM_MODEL_PROVIDER_META[value].label }))
+
+type ActiveModel = SettingsDTO['activeModel']
 
 export function ModelsPanel() {
   const { t } = useI18n()
-  const { cloudEnabled } = useAppStore()
+  const { cloudEnabled } = useAppRuntimeStore()
   const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
   const [builtinModelId, setBuiltinModelId] = useState<string | null>(null)
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
-  const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: "builtin" })
+  const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: ActiveModelProvider.Builtin })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<CustomModelDTO | null>(null)
   // Form fields
@@ -42,10 +165,14 @@ export function ModelsPanel() {
   const [formModelId, setFormModelId] = useState("")
   const [formApiKey, setFormApiKey] = useState("")
   const [formBaseUrl, setFormBaseUrl] = useState("")
+  const [formProvider, setFormProvider] = useState<CustomModelDTO['provider']>("anthropic")
+  const formProviderRef = useRef<CustomModelDTO['provider']>("anthropic")
   // Delete confirmation
   const [deleteModelId, setDeleteModelId] = useState<string | null>(null)
   // Form validation errors (shown only after field is touched)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const isBuiltinActive = activeModel.provider === ActiveModelProvider.Builtin
+  const currentProviderMeta = CUSTOM_MODEL_PROVIDER_META[formProvider]
 
   // Load from backend API
   useEffect(() => {
@@ -67,13 +194,13 @@ export function ModelsPanel() {
 
       // Sync modelReady to global store
       const { provider, id } = updated.activeModel
-      if (provider === 'builtin' || provider === 'cloud') {
-        useAppStore.setState({ modelReady: cloudEnabled })
+      if (provider === ActiveModelProvider.Builtin) {
+        useAppRuntimeStore.setState({ modelReady: cloudEnabled })
       } else {
         const model = id
           ? updated.customModels.find((m) => m.id === id)
           : updated.customModels[0]
-        useAppStore.setState({ modelReady: !!model })
+        useAppRuntimeStore.setState({ modelReady: !!model })
       }
     } catch (err) {
       console.error('Failed to save settings:', err)
@@ -81,14 +208,14 @@ export function ModelsPanel() {
   }, [cloudEnabled])
 
   // Switch active provider
-  const handleSetActiveProvider = async (provider: "builtin" | "custom") => {
+  const handleSetActiveProvider = async (provider: ActiveModelProvider) => {
     let newActive: ActiveModel
-    if (provider === "builtin") {
-      newActive = { provider: "builtin" }
+    if (provider === ActiveModelProvider.Builtin) {
+      newActive = { provider: ActiveModelProvider.Builtin }
     } else {
       const defaultModel = customModels[0]
       if (!defaultModel) return
-      newActive = { provider: "custom", id: defaultModel.id }
+      newActive = { provider: ActiveModelProvider.Custom, id: defaultModel.id }
     }
     setActiveModel(newActive)
     await saveSettings({ activeModel: newActive })
@@ -97,14 +224,14 @@ export function ModelsPanel() {
   // Select built-in model and switch provider
   const handleSelectBuiltin = async (id: string) => {
     setBuiltinModel(id)
-    const newActive: ActiveModel = { provider: "builtin" }
+    const newActive: ActiveModel = { provider: ActiveModelProvider.Builtin }
     setActiveModel(newActive)
     await saveSettings({ activeModel: newActive })
   }
 
   // Set custom model as active
   const handleSetCustomActive = async (id: string) => {
-    const newActive: ActiveModel = { provider: "custom", id }
+    const newActive: ActiveModel = { provider: ActiveModelProvider.Custom, id }
     setActiveModel(newActive)
     await saveSettings({ activeModel: newActive })
   }
@@ -136,7 +263,9 @@ export function ModelsPanel() {
     setFormName("")
     setFormModelId("")
     setFormApiKey("")
-    setFormBaseUrl("")
+    setFormBaseUrl(CUSTOM_MODEL_PROVIDER_META.anthropic.defaultBaseUrl)
+    setFormProvider("anthropic")
+    formProviderRef.current = "anthropic"
     setTouched({})
     setDialogOpen(true)
   }
@@ -148,8 +277,26 @@ export function ModelsPanel() {
     setFormModelId(model.modelId)
     setFormApiKey("")
     setFormBaseUrl(model.baseUrl)
+    setFormProvider(model.provider)
+    formProviderRef.current = model.provider
     setTouched({})
     setDialogOpen(true)
+  }
+
+  const handleProviderChange = (value: CustomModelDTO['provider']) => {
+    const previousProvider = formProvider
+    const previousDefaultBaseUrl = CUSTOM_MODEL_PROVIDER_META[previousProvider].defaultBaseUrl
+    const nextDefaultBaseUrl = CUSTOM_MODEL_PROVIDER_META[value].defaultBaseUrl
+
+    setFormProvider(value)
+    formProviderRef.current = value
+    setFormBaseUrl((current) => {
+      const trimmed = current.trim()
+      if (!trimmed || trimmed === previousDefaultBaseUrl) {
+        return nextDefaultBaseUrl
+      }
+      return current
+    })
   }
 
   // Save custom model (create or edit)
@@ -158,6 +305,7 @@ export function ModelsPanel() {
     setTouched({ name: true, modelId: true, apiKey: true, baseUrl: true })
     if (hasErrors) return
 
+    const provider = formProviderRef.current
     let updated: CustomModelDTO[]
     if (editingModel) {
       updated = customModels.map((m) =>
@@ -167,7 +315,7 @@ export function ModelsPanel() {
               name: formName,
               modelId: formModelId,
               baseUrl: formBaseUrl,
-              provider: 'anthropic' as const,
+              provider,
               ...(formApiKey.trim() ? { apiKey: formApiKey } : {}),
             }
           : m
@@ -176,7 +324,7 @@ export function ModelsPanel() {
       const newModel: CustomModelDTO = {
         id: crypto.randomUUID(),
         name: formName,
-        provider: 'anthropic',
+        provider,
         modelId: formModelId,
         apiKey: formApiKey,
         baseUrl: formBaseUrl,
@@ -194,8 +342,8 @@ export function ModelsPanel() {
     setCustomModels(updated)
 
     const partial: Partial<SettingsDTO> = { customModels: updated }
-    if (activeModel.provider === "custom" && activeModel.id === id) {
-      const newActive: ActiveModel = { provider: "builtin" }
+    if (activeModel.provider === ActiveModelProvider.Custom && activeModel.id === id) {
+      const newActive: ActiveModel = { provider: ActiveModelProvider.Builtin }
       setActiveModel(newActive)
       partial.activeModel = newActive
     }
@@ -203,7 +351,7 @@ export function ModelsPanel() {
   }
 
   // Check if a custom model is active
-  const isCustomActive = (id: string) => activeModel.provider === "custom" && activeModel.id === id
+  const isCustomActive = (id: string) => activeModel.provider === ActiveModelProvider.Custom && activeModel.id === id
 
   return (
     <div className="space-y-8">
@@ -216,17 +364,17 @@ export function ModelsPanel() {
           {/* Built-in model (cloud service) card -- hidden in offline mode */}
           {cloudEnabled && (
             <button
-              onClick={() => handleSetActiveProvider("builtin")}
+              onClick={() => handleSetActiveProvider(ActiveModelProvider.Builtin)}
               className={cn(
                 "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
-                activeModel.provider === "builtin" || activeModel.provider === "cloud"
+                isBuiltinActive
                   ? "border-primary bg-primary/5"
                   : "border-border hover:border-muted-foreground/30"
               )}
             >
               <div className={cn(
                 "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                activeModel.provider === "builtin" || activeModel.provider === "cloud"
+                isBuiltinActive
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground"
               )}>
@@ -238,7 +386,7 @@ export function ModelsPanel() {
                   {t.settings.cloudDesc}
                 </div>
               </div>
-              {(activeModel.provider === "builtin" || activeModel.provider === "cloud") && (
+              {isBuiltinActive && (
                 <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
               )}
             </button>
@@ -246,10 +394,10 @@ export function ModelsPanel() {
 
           {/* Custom API card */}
           <button
-            onClick={() => handleSetActiveProvider("custom")}
+            onClick={() => handleSetActiveProvider(ActiveModelProvider.Custom)}
             className={cn(
               "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
-              activeModel.provider === "custom"
+              activeModel.provider === ActiveModelProvider.Custom
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30",
               customModels.length === 0 && "opacity-50 cursor-not-allowed"
@@ -258,7 +406,7 @@ export function ModelsPanel() {
           >
             <div className={cn(
               "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-              activeModel.provider === "custom"
+              activeModel.provider === ActiveModelProvider.Custom
                 ? "bg-orange-500 text-white"
                 : "bg-muted text-muted-foreground"
             )}>
@@ -268,7 +416,7 @@ export function ModelsPanel() {
               <div className="text-sm font-semibold">{t.settings.customProvider}</div>
               <div className="text-xs text-muted-foreground mt-1">{t.settings.customDesc}</div>
             </div>
-            {activeModel.provider === "custom" && (
+            {activeModel.provider === ActiveModelProvider.Custom && (
               <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
             )}
           </button>
@@ -283,7 +431,7 @@ export function ModelsPanel() {
           </h4>
           <div className="space-y-2">
             {BUILTIN_MODELS.map((model) => {
-              const isActive = builtinModel === model.id && (activeModel.provider === "builtin" || activeModel.provider === "cloud")
+              const isActive = builtinModel === model.id && isBuiltinActive
               return (
                 <div
                   key={model.id}
@@ -456,6 +604,21 @@ export function ModelsPanel() {
           </div>
           <div className="space-y-4">
             <div className="space-y-1.5">
+              <Label>{t.settings.modelProvider ?? 'Provider'}</Label>
+              <Select value={formProvider} onValueChange={(value) => handleProviderChange(value as CustomModelDTO['provider'])}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder={t.settings.modelProviderPlaceholder ?? 'Select a provider'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUSTOM_MODEL_PROVIDER_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label>{t.settings.modelName}</Label>
               <Input
                 value={formName}
@@ -474,7 +637,7 @@ export function ModelsPanel() {
                 value={formModelId}
                 onChange={(e) => setFormModelId(e.target.value)}
                 onBlur={() => handleBlur('modelId')}
-                placeholder={t.settings.modelIdPlaceholder}
+                placeholder={currentProviderMeta.modelIdExample ?? t.settings.modelIdPlaceholder}
                 className={cn("rounded-xl", touched.modelId && formErrors.modelId ? 'border-destructive' : '')}
               />
               {touched.modelId && formErrors.modelId && (

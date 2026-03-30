@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getDatabase } from '../db/index.ts'
 import { getPaths } from '../config/index.ts'
@@ -59,16 +59,26 @@ export class MemoryIndexer {
   private indexAgentMemory(agentId: string): number {
     const agentsDir = getPaths().agents
     const memoryDir = resolve(agentsDir, agentId, 'memory')
-    if (!existsSync(memoryDir)) return 0
 
     let count = 0
 
-    // Index MEMORY.md
-    const memoryFile = resolve(memoryDir, 'MEMORY.md')
+    const memoryFile = resolve(agentsDir, agentId, 'MEMORY.md')
     if (existsSync(memoryFile)) {
       const content = readFileSync(memoryFile, 'utf-8')
       if (content.trim()) {
         this.indexFile(agentId, 'memory', memoryFile, content)
+        count++
+      }
+    }
+
+    if (!existsSync(memoryDir)) return count
+
+    const noteFiles = readdirSync(memoryDir).filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+    for (const file of noteFiles) {
+      const filePath = resolve(memoryDir, file)
+      const content = readFileSync(filePath, 'utf-8')
+      if (content.trim()) {
+        this.indexFile(agentId, 'note', filePath, content)
         count++
       }
     }
@@ -90,12 +100,44 @@ export class MemoryIndexer {
     // Index conversations/
     const convDir = resolve(memoryDir, 'conversations')
     if (existsSync(convDir)) {
-      const convFiles = readdirSync(convDir).filter((f) => f.endsWith('.md'))
-      for (const file of convFiles) {
-        const filePath = resolve(convDir, file)
+      const entries = readdirSync(convDir)
+      for (const entry of entries) {
+        const entryPath = resolve(convDir, entry)
+        try {
+          if (statSync(entryPath).isDirectory()) {
+            const nestedFiles = readdirSync(entryPath).filter((f) => f.endsWith('.md'))
+            for (const file of nestedFiles) {
+              const filePath = resolve(entryPath, file)
+              const content = readFileSync(filePath, 'utf-8')
+              if (content.trim()) {
+                this.indexFile(agentId, 'conversation', filePath, content)
+                count++
+              }
+            }
+            continue
+          }
+        } catch {
+          continue
+        }
+
+        if (entry.endsWith('.md')) {
+          const content = readFileSync(entryPath, 'utf-8')
+          if (content.trim()) {
+            this.indexFile(agentId, 'conversation', entryPath, content)
+            count++
+          }
+        }
+      }
+    }
+
+    const summariesDir = resolve(memoryDir, 'summaries')
+    if (existsSync(summariesDir)) {
+      const summaryFiles = readdirSync(summariesDir).filter((f) => f.endsWith('.md'))
+      for (const file of summaryFiles) {
+        const filePath = resolve(summariesDir, file)
         const content = readFileSync(filePath, 'utf-8')
         if (content.trim()) {
-          this.indexFile(agentId, 'conversation', filePath, content)
+          this.indexFile(agentId, 'summary', filePath, content)
           count++
         }
       }

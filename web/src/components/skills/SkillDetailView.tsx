@@ -44,6 +44,14 @@ interface SkillDetailViewProps {
   hideHeader?: boolean
 }
 
+function getSourceUrl(skill: Skill): string | null {
+  const registryMeta = skill.registryMeta
+  if (!registryMeta || !('sourceUrl' in registryMeta)) {
+    return null
+  }
+  return registryMeta.sourceUrl
+}
+
 export function SkillDetailView({
   skill,
   managedSkill,
@@ -58,9 +66,7 @@ export function SkillDetailView({
   const showEditButton = Boolean(isCustomEditableManagedSkill(managedSkill) && onEditSkill)
   const showDeleteButton = skill.source !== 'workspace'
   const description = getSkillDescription(skill, managedSkill, t)
-  const sourceUrl = skill.registryMeta && 'sourceUrl' in skill.registryMeta
-    ? skill.registryMeta.sourceUrl
-    : undefined
+  const sourceUrl = getSourceUrl(skill)
   const availability = resolveRuntimeSkillAvailability(skill)
   const envResults = skill.eligibilityDetail?.env.results ?? []
   const dependencyResults = skill.eligibilityDetail?.dependencies.results ?? []

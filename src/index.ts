@@ -1,29 +1,25 @@
-// Remove CLAUDECODE env var to prevent Claude Agent SDK from detecting a nested session
+// Remove CLAUDECODE env var to prevent inherited Claude-specific session detection
 delete process.env.CLAUDECODE
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { loadEnv, getEnv } from './config/index.ts'
+import { websocket } from 'hono/bun'
+import { loadEnv, getEnv, resolvePathInput } from './config/index.ts'
 import { initLogger, getLogger } from './logger/index.ts'
 import { initDatabase } from './db/index.ts'
 import { EventBus } from './events/index.ts'
-import { AgentManager, AgentQueue, PromptBuilder, AgentCompiler, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
+import { AgentManager, AgentQueue, PromptBuilder, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
 import { MessageRouter, ChannelManager } from './channel/index.ts'
 import { registerChannelOutboundService } from './channel/outbound-service.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { Scheduler } from './scheduler/index.ts'
-import { IpcWatcher } from './ipc/index.ts'
 import { BrowserManager } from './browser/index.ts'
 import { createApp } from './routes/index.ts'
-import {
-  TaskServiceError,
-  createScheduledTask,
-  deleteScheduledTaskById,
-  pauseScheduledTaskById,
-  resumeScheduledTaskById,
-} from './task/index.ts'
+import { RealtimeHub } from './realtime/hub.ts'
+import { ensureBunRuntime } from './agent/runtime.ts'
+import { resetShellEnvCache } from './utils/shell-env.ts'
 
 async function main() {
   // 1. Load environment variables
@@ -40,6 +36,18 @@ async function main() {
   const logger = initLogger()
   logger.info('YouClaw starting...')
 
+  // 2b. Pre-extract embedded Bun runtime (before any agent code runs)
+  try {
+    const bunRuntimePath = ensureBunRuntime()
+    if (bunRuntimePath) {
+      logger.info({ path: bunRuntimePath }, 'Bun runtime ready (embedded)')
+      resetShellEnvCache()  // Ensure embedded Bun dir is picked up by getShellEnv()
+    } else {
+      logger.info('Using system Bun runtime')
+    }
+  } catch (err) {
+    logger.warn({ err }, '[STARTUP] Step 2b failed: ensure Bun runtime, continuing without embedded runtime')
+  }
   // 3. Initialize database
   try {
     initDatabase()
@@ -51,6 +59,7 @@ async function main() {
 
   // 4. Create EventBus
   const eventBus = new EventBus()
+  const realtimeHub = new RealtimeHub(eventBus)
 
   // 4b. Initialize browser subsystem and ensure the default managed profile exists
   const browserManager = new BrowserManager()
@@ -76,7 +85,6 @@ async function main() {
   const skillsWatcher = new SkillsWatcher(skillsLoader, {
     onReload: (skills) => {
       logger.info({ count: skills.length }, 'Skills hot-reloaded')
-      agentManagerRef?.syncAllAgentSkills()
     },
   })
   skillsWatcher.start()
@@ -98,6 +106,7 @@ async function main() {
     memoryIndexer = new MemoryIndexer()
     memoryIndexer.initTable()
     memoryIndexer.rebuildIndex()
+    memoryManager.attachIndexer(memoryIndexer)
     logger.info('Memory search index built')
   } catch (err) {
     logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'FTS5 index init failed, search unavailable')
@@ -115,9 +124,8 @@ async function main() {
   // 8. Create HooksManager
   const hooksManager = new HooksManager()
 
-  // 9. Create PromptBuilder, AgentCompiler, AgentRouter
+  // 9. Create PromptBuilder, AgentRouter
   const promptBuilder = new PromptBuilder(skillsLoader, memoryManager)
-  const compiler = new AgentCompiler(promptBuilder)
   const agentRouter = new AgentRouter()
 
   // 10. Create AgentManager (inject all new modules)
@@ -126,11 +134,11 @@ async function main() {
     agentManager = new AgentManager(
       eventBus,
       promptBuilder,
-      compiler,
       hooksManager,
       agentRouter,
       secretsManager,
       skillsLoader,
+      memoryManager,
       browserManager,
     )
     await agentManager.loadAgents()
@@ -165,65 +173,6 @@ async function main() {
   scheduler.start()
   logger.info('Task scheduler started')
 
-  // 15. Create IPC Watcher and start
-  const ipcWatcher = new IpcWatcher({
-    onScheduleTask: (data) => {
-      const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      createScheduledTask({
-        id: taskId,
-        agentId: data.agentId,
-        chatId: data.chatId,
-        prompt: data.prompt,
-        scheduleType: data.scheduleType as 'cron' | 'interval' | 'once',
-        scheduleValue: data.scheduleValue,
-        name: data.name,
-        description: data.description,
-        timezone: data.timezone,
-        deliveryMode: data.deliveryMode as 'push' | 'none' | undefined,
-        deliveryTarget: data.deliveryTarget,
-      })
-      logger.info({ taskId, agentId: data.agentId, scheduleType: data.scheduleType }, 'IPC: scheduled task created')
-    },
-    onPauseTask: (taskId) => {
-      try {
-        pauseScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task paused')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: pause failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-    onResumeTask: (taskId) => {
-      try {
-        resumeScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task resumed')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: resume failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-    onCancelTask: (taskId) => {
-      try {
-        deleteScheduledTaskById(taskId)
-        logger.info({ taskId }, 'IPC: scheduled task cancelled')
-      } catch (err) {
-        if (err instanceof TaskServiceError && err.statusCode === 404) {
-          logger.warn({ taskId }, 'IPC: cancel failed, task not found')
-          return
-        }
-        throw err
-      }
-    },
-  })
-  ipcWatcher.start()
-  logger.info('IPC Watcher started')
-
   // 16. Startup memory maintenance: log cleanup + snapshot restore
   for (const agentConfig of agentManager.getAgents()) {
     memoryManager.pruneOldLogs(agentConfig.id, 30)
@@ -231,15 +180,16 @@ async function main() {
   }
 
   // 17. Create HTTP server
-  const app = createApp({ agentManager, agentQueue, eventBus, router, channelManager, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler, browserManager })
+  const app = createApp({ agentManager, agentQueue, eventBus, router, channelManager, skillsLoader, registryManager, memoryManager, memoryIndexer, scheduler, browserManager, realtimeHub })
 
   let server: ReturnType<typeof Bun.serve>
   try {
     server = Bun.serve({
-      fetch: app.fetch,
+      fetch: (request, server) => app.fetch(request, server),
       port: env.PORT,
       hostname: '127.0.0.1',  // Listen on localhost only to avoid Windows firewall prompts
       idleTimeout: 255,       // Max idle timeout (seconds) for SSE/long-running requests
+      websocket,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -264,8 +214,8 @@ async function main() {
     await channelManager.disconnectAll()
     await browserManager.shutdown().catch(() => {})
     skillsWatcher.stop()
-    ipcWatcher.stop()
     scheduler.stop()
+    realtimeHub.destroy()
     server.stop()
     process.exit(0)
   }
@@ -277,7 +227,7 @@ async function main() {
 function writeStartupCrashLog(errorText: string): void {
   try {
     const baseDir = process.env.DATA_DIR
-      ? resolve(process.env.DATA_DIR)
+      ? resolvePathInput(process.env.DATA_DIR)
       : resolve(tmpdir(), 'youclaw-data')
     mkdirSync(baseDir, { recursive: true })
     const logPath = resolve(baseDir, 'startup-crash.log')

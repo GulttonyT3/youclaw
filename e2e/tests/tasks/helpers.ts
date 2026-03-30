@@ -90,7 +90,13 @@ export async function reloadTasksPage(page: Page) {
 /** 通过弹层日历 + 小时/分钟选择器设置 once 时间 */
 export async function setOnceDateTime(page: Page, datetimeLocal: string) {
   const [datePart, timePart] = datetimeLocal.split('T')
+  if (!datePart || !timePart) {
+    throw new Error(`Invalid datetime-local value: ${datetimeLocal}`)
+  }
   const [hour, minute] = timePart.split(':')
+  if (!hour || !minute) {
+    throw new Error(`Invalid time component in datetime-local value: ${datetimeLocal}`)
+  }
 
   await page.getByTestId('task-once-preset-custom').click()
 

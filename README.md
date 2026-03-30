@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Desktop AI Assistant powered by Claude Agent SDK</strong>
+  <strong>Desktop AI Assistant powered by a multi-provider coding agent runtime</strong>
 </p>
 
 <p align="center">
@@ -66,6 +66,19 @@ Download the `.exe` installer from [Releases](https://github.com/CodePhiliaX/you
 - **Web UI** — React + shadcn/ui with SSE streaming, i18n (中文 / English)
 - **Lightweight Desktop App** — Tauri 2 bundle ~27 MB (vs ~338 MB Electron), native system tray
 
+## Browser Profiles
+
+YouClaw supports three browser profile drivers:
+
+- `Managed Chromium` — recommended for most users
+- `Remote CDP` — for existing advanced automation setups
+- `Extension Relay` — advanced local attach mode for a browser that already exposes a loopback CDP endpoint
+
+Detailed guide:
+
+- English: [docs/browser-profiles.md](./docs/browser-profiles.md)
+- 简体中文: [docs/browser-profiles.zh.md](./docs/browser-profiles.zh.md)
+
 ## Tech Stack
 
 | Layer | Choice |
@@ -73,7 +86,7 @@ Download the `.exe` installer from [Releases](https://github.com/CodePhiliaX/you
 | Runtime & Package Manager | [Bun](https://bun.sh/) |
 | Desktop Shell | [Tauri 2](https://tauri.app/) (Rust) |
 | Backend | Hono + bun:sqlite + Pino |
-| Agent | `@anthropic-ai/claude-agent-sdk` |
+| Agent | `@mariozechner/pi-coding-agent` + `@mariozechner/pi-ai` |
 | Frontend | Vite + React + shadcn/ui + Tailwind CSS |
 | Channels | grammY (Telegram) · `dingtalk-stream` (DingTalk) · `@larksuiteoapi/node-sdk` (Feishu) · QQ · WeCom |
 | Scheduled Tasks | croner |
@@ -87,7 +100,7 @@ Download the `.exe` installer from [Releases](https://github.com/CodePhiliaX/you
 │   ┌──────────────┐    ┌────────────────────────────┐ │
 │   │   WebView     │    │   Bun Sidecar              │ │
 │   │  Vite+React   │◄──►  Hono API Server           │ │
-│   │  shadcn/ui    │ HTTP│  Claude Agent SDK         │ │
+│   │  shadcn/ui    │ HTTP│  Multi-provider Agent RT  │ │
 │   │               │ SSE │  bun:sqlite               │ │
 │   └──────────────┘    └────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
@@ -125,7 +138,7 @@ Download the `.exe` installer from [Releases](https://github.com/CodePhiliaX/you
 
 - [Bun](https://bun.sh/) >= 1.1
 - [Rust](https://rustup.rs/) (for Tauri desktop build)
-- An [Anthropic API key](https://console.anthropic.com/)
+- A model API key for your chosen provider
 
 ### Setup
 
@@ -139,7 +152,7 @@ cd web && bun install && cd ..
 
 # Configure environment
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY
+# Edit .env and set MODEL_API_KEY
 ```
 
 ### Web Mode
@@ -188,11 +201,12 @@ bun test:e2e:ui      # Run E2E tests with UI
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | — | Anthropic API key |
-| `ANTHROPIC_BASE_URL` | No | — | Custom API base URL |
+| `MODEL_PROVIDER` | No | `builtin` | Default model provider or runtime mode |
+| `MODEL_ID` | No | `minimax/MiniMax-M2.7-highspeed` | Default model reference |
+| `MODEL_API_KEY` | Yes | — | Model API key |
+| `MODEL_BASE_URL` | No | — | Custom model API base URL |
 | `PORT` | No | `62601` | Backend server port |
-| `DATA_DIR` | No | `./data` | Data storage directory |
-| `AGENT_MODEL` | No | `claude-sonnet-4-6` | Default Claude model |
+| `DATA_DIR` | No | `./data` in dev, `~/.youclaw` in desktop production | Data storage directory. For dev, set `DATA_DIR=~/.youclaw-dev` if you want an isolated user-home data dir |
 | `LOG_LEVEL` | No | `info` | Log level |
 | `TELEGRAM_BOT_TOKEN` | No | — | Enable Telegram channel |
 | `DINGTALK_CLIENT_ID` | No | — | DingTalk app client ID |
@@ -228,13 +242,13 @@ src/
 ├── events/         # EventBus (stream/tool_use/complete/error)
 ├── ipc/            # File-polling IPC between Agent and main process
 ├── logger/         # Pino logger
-├── memory/         # Per-agent MEMORY.md and conversation logs
+├── memory/         # Memory helpers for root MEMORY.md plus per-agent logs/archives
 ├── routes/         # Hono API routes (/api/*)
 ├── scheduler/      # Cron/interval/once task scheduler
 ├── skills/         # Skills loader, watcher, frontmatter parser
 src-tauri/
 ├── src/            # Rust main process (sidecar, window, tray, updater)
-agents/             # Agent configs (agent.yaml + SOUL.md + skills/)
+agents/             # Agent workspaces (agent.yaml + bootstrap docs + MEMORY.md + skills/)
 skills/             # Project-level skills (SKILL.md format)
 e2e/                # E2E tests (Playwright)
 web/src/

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { getLogger } from '../logger/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
+import { injectMessageTimestamp } from '../agent/message-timestamp.ts'
 import { parseSkillInvocations } from '../skills/invoke.ts'
 import type { InboundMessage, Channel } from './types.ts'
 import type { AgentToolUse } from '../events/types.ts'
@@ -80,8 +81,7 @@ export class MessageRouter {
     let contentForAgent = message.content
 
     if (requestedSkills.length === 0 && this.skillsLoader) {
-      const allSkills = this.skillsLoader.loadAllSkills()
-      const knownNames = new Set(allSkills.filter((s) => s.usable).map((s) => s.name))
+      const knownNames = this.skillsLoader.getUsableSkillNamesForAgent(config)
       const parsed = parseSkillInvocations(message.content, knownNames)
       requestedSkills = parsed.requestedSkills
       contentForAgent = parsed.cleanContent || message.content
@@ -128,24 +128,47 @@ export class MessageRouter {
 
     // Enqueue for processing (pass requestedSkills)
     try {
-      const reply = await this.agentQueue.enqueue(
+      const contentForModel = injectMessageTimestamp(contentForAgent, {
+        timestamp: message.timestamp,
+      })
+
+      await this.agentQueue.enqueue(
         config.id,
         message.chatId,
-        contentForAgent,
-        requestedSkills.length > 0 ? requestedSkills : undefined,
-        message.browserProfileId,
-        message.attachments,
-        message.id,
-      )
+        contentForModel,
+        {
+          turnId: message.id,
+          requestedSkills: requestedSkills.length > 0 ? requestedSkills : undefined,
+          browserProfileId: message.browserProfileId,
+          attachments: message.attachments,
+          afterResult: async (result) => {
+            if (!result.trim()) return
+            if (!this.memoryManager) return
 
-      // Append to daily log
-      if (this.memoryManager) {
-        try {
-          this.memoryManager.appendDailyLog(config.id, message.chatId, message.content, reply, config.memory?.maxLogEntryLength)
-        } catch (logErr) {
-          getLogger().error({ error: logErr, agentId: config.id }, 'Failed to append daily log')
-        }
-      }
+            try {
+              this.memoryManager.appendDailyLog(
+                config.id,
+                message.chatId,
+                message.content,
+                result,
+                config.memory?.maxLogEntryLength,
+              )
+            } catch (logErr) {
+              getLogger().error({ error: logErr, agentId: config.id }, 'Failed to append daily log')
+            }
+
+            if (message.isGroup || config.memory?.enabled === false) {
+              return
+            }
+
+            try {
+              await this.memoryManager.rememberTurn(config.id, message.chatId, message.content, result)
+            } catch (memoryErr) {
+              getLogger().error({ error: memoryErr, agentId: config.id }, 'Failed to append daily memory note')
+            }
+          },
+        },
+      )
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       logger.error({ error: err, chatId: message.chatId }, 'Message processing failed')

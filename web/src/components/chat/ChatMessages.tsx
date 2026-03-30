@@ -26,6 +26,11 @@ export function ChatMessages() {
   const { t } = useI18n()
   const { timelineItems, streamingText, isProcessing, pendingToolUse } = useChatContext()
   const renderableItems = buildRenderableTimeline(timelineItems)
+  const latestRenderableItem = renderableItems[renderableItems.length - 1]
+  const showThinkingState = isProcessing
+    && !streamingText
+    && pendingToolUse.length === 0
+    && !(latestRenderableItem?.kind === 'message' && latestRenderableItem.role === 'assistant')
 
   return (
     <Conversation data-testid="message-list">
@@ -35,7 +40,7 @@ export function ChatMessages() {
         )}
 
         {/* Thinking state */}
-        {isProcessing && !streamingText && pendingToolUse.length === 0 && (
+        {showThinkingState && (
           <div className="flex gap-3 py-3">
             <Avatar className="h-8 w-8 mt-0.5">
               <AvatarImage src="/icon.svg" alt="YouClaw" />
@@ -78,15 +83,17 @@ function StreamingAssistantItem({ content }: { content: string }) {
 
   return (
     <AIMessage from="assistant">
-      <div className="flex gap-3 py-3">
-        <Avatar className="h-8 w-8 mt-0.5">
+      <div className="group flex gap-3 py-3">
+        <Avatar className="h-8 w-8">
           <AvatarImage src="/icon.svg" alt="YouClaw" />
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>
         </Avatar>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-muted-foreground mb-1.5">{t.chat.assistant}</div>
+        <div className="relative flex-1 min-w-0">
+          <div className="pointer-events-none absolute bottom-full left-0 mb-1 text-xs font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {t.chat.assistant}
+          </div>
           <MessageContent>
             <MessageResponse parseIncompleteMarkdown>{content}</MessageResponse>
           </MessageContent>

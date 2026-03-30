@@ -2,9 +2,12 @@ import { z } from 'zod/v4'
 
 // MCP server config schema
 export const McpServerSchema = z.object({
-  command: z.string(),
+  command: z.string().optional(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
+  cwd: z.string().optional(),
+  workingDirectory: z.string().optional(),
+  url: z.string().optional(),
 })
 
 // Sub-agent inline definition schema
@@ -80,6 +83,7 @@ export const SecurityConfigSchema = z.object({
 export const BrowserConfigSchema = z.object({
   enabled: z.boolean().default(true),
   defaultProfile: z.string().optional(),
+  target: z.enum(['host', 'sandbox']).default('host'),
   allowChatOverride: z.boolean().default(true),
 })
 
@@ -96,13 +100,15 @@ export const AgentConfigSchema = z.object({
   // Memory config (enhanced)
   memory: z.object({
     enabled: z.boolean().default(false),
-    recentDays: z.number().default(3),
+    recentDays: z.number().default(2),
     maxContextChars: z.number().default(10000),
     archiveConversations: z.boolean().default(true),
     maxLogEntryLength: z.number().default(500),
+    historyFallbackMessages: z.number().default(12),
+    maxSessionBytes: z.number().default(262144),
   }).optional(),
   skills: z.array(z.string()).optional(),
-  maxConcurrency: z.number().default(1),
+  maxConcurrency: z.number().default(10),
   // Sub-agent config (supports ref references and inline definitions)
   agents: z.record(z.string(), AgentEntrySchema).optional(),
   // Phase 4: Agent capability enhancements

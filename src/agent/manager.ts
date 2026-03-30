@@ -5,10 +5,10 @@ import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { inferChannelType } from '../channel/config-schema.ts'
 import type { EventBus } from '../events/index.ts'
+import type { MemoryManager } from '../memory/index.ts'
 import { AgentConfigSchema } from './schema.ts'
 import { AgentRuntime } from './runtime.ts'
 import { PromptBuilder } from './prompt-builder.ts'
-import type { AgentCompiler } from './compiler.ts'
 import type { HooksManager } from './hooks.ts'
 import type { AgentRouter } from './router.ts'
 import type { SecretsManager } from './secrets.ts'
@@ -16,38 +16,38 @@ import type { SkillsLoader } from '../skills/loader.ts'
 import type { BrowserManager } from '../browser/index.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
 import {
-  DEFAULT_AGENT_YAML, DEFAULT_SOUL_MD, DEFAULT_AGENT_MD,
-  DEFAULT_USER_MD, DEFAULT_TOOLS_MD, DEFAULT_MEMORY_MD, GLOBAL_MEMORY_MD,
+  DEFAULT_AGENT_YAML, GLOBAL_MEMORY_MD,
 } from './templates.ts'
+import { ensureAgentWorkspace } from './workspace.ts'
 
 export class AgentManager {
   private agents: Map<string, AgentInstance> = new Map()
   private eventBus: EventBus
   private promptBuilder: PromptBuilder
-  private compiler: AgentCompiler | null
   private hooksManager: HooksManager | null
   private agentRouter: AgentRouter | null
   private secretsManager: SecretsManager | null
   private skillsLoader: SkillsLoader | null
+  private memoryManager: MemoryManager | null
   private browserManager: BrowserManager | null
 
   constructor(
     eventBus: EventBus,
     promptBuilder: PromptBuilder,
-    compiler?: AgentCompiler,
     hooksManager?: HooksManager,
     agentRouter?: AgentRouter,
     secretsManager?: SecretsManager,
     skillsLoader?: SkillsLoader,
+    memoryManager?: MemoryManager,
     browserManager?: BrowserManager,
   ) {
     this.eventBus = eventBus
     this.promptBuilder = promptBuilder
-    this.compiler = compiler ?? null
     this.hooksManager = hooksManager ?? null
     this.agentRouter = agentRouter ?? null
     this.secretsManager = secretsManager ?? null
     this.skillsLoader = skillsLoader ?? null
+    this.memoryManager = memoryManager ?? null
     this.browserManager = browserManager ?? null
   }
 
@@ -64,36 +64,13 @@ export class AgentManager {
     if (!existsSync(resolve(defaultDir, 'agent.yaml'))) {
       logger.info('Initializing default agent template...')
       mkdirSync(defaultDir, { recursive: true })
-      mkdirSync(resolve(defaultDir, 'memory'), { recursive: true })
-      mkdirSync(resolve(defaultDir, 'skills'), { recursive: true })
-      mkdirSync(resolve(defaultDir, 'prompts'), { recursive: true })
       writeFileSync(resolve(defaultDir, 'agent.yaml'), DEFAULT_AGENT_YAML)
-      writeFileSync(resolve(defaultDir, 'SOUL.md'), DEFAULT_SOUL_MD)
-      writeFileSync(resolve(defaultDir, 'AGENT.md'), DEFAULT_AGENT_MD)
-      writeFileSync(resolve(defaultDir, 'USER.md'), DEFAULT_USER_MD)
-      writeFileSync(resolve(defaultDir, 'TOOLS.md'), DEFAULT_TOOLS_MD)
-      writeFileSync(resolve(defaultDir, 'memory', 'MEMORY.md'), DEFAULT_MEMORY_MD)
-    } else {
-      // Sync AGENT.md when the checked-in default agent still uses legacy IPC task guidance.
-      const agentMdPath = resolve(defaultDir, 'AGENT.md')
-      if (existsSync(agentMdPath)) {
-        try {
-          const currentContent = readFileSync(agentMdPath, 'utf-8')
-          if (
-            currentContent.includes('{{ipcTasksDir}}')
-            || currentContent.includes('{{ipcCurrentTasksPath}}')
-            || currentContent.includes('"type": "schedule_task"')
-            || currentContent.includes('current_tasks.json')
-          ) {
-            writeFileSync(agentMdPath, DEFAULT_AGENT_MD)
-            logger.info('Updated default agent AGENT.md with latest template')
-          }
-        } catch (err) {
-          logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to sync AGENT.md template')
-        }
-      }
-
     }
+    ensureAgentWorkspace(defaultDir, {
+      ensureBootstrap: true,
+      ensureSkillsDir: true,
+      ensurePromptsDir: true,
+    })
 
     if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
       mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
@@ -150,10 +127,14 @@ export class AgentManager {
         const config: AgentConfig = {
           ...result.data,
           workspaceDir: agentDir,
+          hasExplicitModel: typeof parsed.model === 'string' && parsed.model.trim().length > 0,
         }
 
         if (this.skillsLoader) {
-          const normalizedSkills = this.skillsLoader.normalizeAgentSkillNames(config.skills)
+          const normalizedSkills = this.skillsLoader.normalizeAgentSkillNames(
+            config.skills,
+            this.skillsLoader.loadAllSkillsForAgent(config),
+          )
           if (normalizedSkills.changed) {
             config.skills = normalizedSkills.skills
             const nextYaml = {
@@ -192,9 +173,11 @@ export class AgentManager {
           config,
           this.eventBus,
           this.promptBuilder,
-          this.compiler ?? undefined,
           this.hooksManager ?? undefined,
+          this.skillsLoader ?? undefined,
+          this.memoryManager ?? undefined,
           this.browserManager ?? undefined,
+          this.secretsManager ?? undefined,
         )
 
         this.agents.set(config.id, {
@@ -210,15 +193,6 @@ export class AgentManager {
             queueDepth: 0,
           },
         })
-
-        // Sync .claude/skills/ symlinks for SDK discovery
-        if (this.skillsLoader) {
-          try {
-            this.skillsLoader.syncAgentClaudeSkills(config, agentDir)
-          } catch (err) {
-            logger.warn({ agentId: config.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to sync .claude/skills/')
-          }
-        }
 
         logger.info({ agentId: config.id, name: config.name }, 'Agent loaded')
       } catch (err) {
@@ -309,21 +283,4 @@ export class AgentManager {
     return this.agents
   }
 
-  /**
-   * Re-sync .claude/skills/ symlinks for all loaded agents.
-   * Called after skills hot-reload so new/removed skills are reflected.
-   */
-  syncAllAgentSkills(): void {
-    if (!this.skillsLoader) return
-    const logger = getLogger()
-    const paths = getPaths()
-    for (const managed of this.agents.values()) {
-      const agentDir = resolve(paths.agents, managed.config.id)
-      try {
-        this.skillsLoader.syncAgentClaudeSkills(managed.config, agentDir)
-      } catch (err) {
-        logger.warn({ agentId: managed.config.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to sync .claude/skills/ on reload')
-      }
-    }
-  }
 }

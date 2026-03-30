@@ -20,7 +20,7 @@ bun build:tauri      # Build Tauri desktop app
 - **Runtime**: Bun (backend sidecar + package manager)
 - **Desktop Shell**: Tauri 2 (Rust, window/tray/updater)
 - **Backend**: Hono (HTTP) + bun:sqlite (database) + Pino (logging)
-- **Agent**: @anthropic-ai/claude-agent-sdk
+- **Agent**: @mariozechner/pi-coding-agent + @mariozechner/pi-ai
 - **Frontend**: Vite + React + shadcn/ui + Tailwind CSS
 - **Validation**: Zod (v4, import from `zod/v4`)
 - **Scheduling**: croner (cron expression parser)
@@ -43,14 +43,14 @@ bun build:tauri      # Build Tauri desktop app
 
 ```
 src/
-├── agent/          # AgentManager (loads agent.yaml), AgentRuntime (claude-agent-sdk), AgentQueue (concurrency), PromptBuilder, SubagentTracker
+├── agent/          # AgentManager (loads agent.yaml), AgentRuntime (pi-coding-agent/pi-ai), AgentQueue (concurrency), PromptBuilder, SubagentTracker
 ├── channel/        # MessageRouter, TelegramChannel
 ├── config/         # env.ts (Zod env validation), paths.ts (path constants)
 ├── db/             # bun:sqlite init, message/chat/task CRUD
 ├── events/         # EventBus + type definitions (stream/tool_use/complete/error/subagent_*)
 ├── ipc/            # IpcWatcher (file-polling IPC), task snapshot writer
 ├── logger/         # Pino logger
-├── memory/         # MemoryManager (per-agent MEMORY.md + logs)
+├── memory/         # MemoryManager (root MEMORY.md + per-agent logs/archives/summaries)
 ├── routes/         # Hono API routes (agents/messages/stream/skills/memory/tasks/system/health)
 ├── scheduler/      # Scheduler (30s polling, cron/interval/once, backoff, stuck detection)
 ├── skills/         # SkillsLoader (3-tier priority: workspace > builtin > user), SkillsWatcher (hot reload), eligibility check, frontmatter parser, /skill invocation syntax
@@ -60,7 +60,7 @@ src-tauri/
 ├── bin/            # Bun sidecar compiled binaries
 ├── icons/          # App & tray icons (includes trayTemplate for macOS menu bar)
 agents/
-├── <id>/           # agent.yaml + SOUL.md + TOOLS.md + USER.md + AGENT.md + skills/ + memory/ + prompts/
+├── <id>/           # agent.yaml + AGENTS.md + SOUL.md + IDENTITY.md + USER.md + TOOLS.md + HEARTBEAT.md + BOOTSTRAP.md + MEMORY.md + skills/ + memory/ + prompts/
 skills/             # Project-level skills (SKILL.md format, YAML frontmatter)
 prompts/            # system.md (system prompt), env.md (environment description)
 web/src/
@@ -72,10 +72,10 @@ web/src/
 
 ## Environment Variables
 
-- `ANTHROPIC_API_KEY` (required)
+- `MODEL_API_KEY` (required)
 - `PORT` (default 62601)
-- `DATA_DIR` (default ./data)
-- `AGENT_MODEL` (default minimax/MiniMax-M2.7-highspeed)
+- `DATA_DIR` (default `./data` in dev, `~/.youclaw` for desktop production; use `~/.youclaw-dev` via env for dev isolation)
+- `MODEL_PROVIDER` / `MODEL_ID` (default minimax / MiniMax-M2.7-highspeed)
 - `LOG_LEVEL` (debug/info/warn/error, default info)
 - `TELEGRAM_BOT_TOKEN` (optional, enables Telegram channel)
 
@@ -88,7 +88,7 @@ web/src/
 - Commit messages follow Conventional Commits (English)
 - All code comments must be written in English
 - Agent config uses YAML format (`agent.yaml`), validated with Zod schema
-- Skills use Markdown + YAML frontmatter format (`SKILL.md`), 3-tier loading priority: Agent workspace > project `skills/` > `~/.youclaw/skills/`
+- Skills use Markdown + YAML frontmatter format (`SKILL.md`), 3-tier loading priority: Agent workspace > project `skills/` > app data `skills/`
 - Database migrations use try/catch ALTER TABLE pattern (no dedicated migration tool)
 - API routes mounted under `/api` prefix
 - Tauri Store for desktop settings persistence (API Key, Base URL, port, theme)

@@ -26,12 +26,11 @@ import { uploadChatAttachment } from "@/api/client";
 import { useChatContext } from "@/hooks/chatCtx";
 import { useI18n } from "@/i18n";
 import { resolveChatAttachments } from "@/lib/chat-attachments";
-import { useAppStore } from "@/stores/app";
-import { Bot, Globe, PlusIcon } from "lucide-react";
+import { notify, useAppRuntimeStore } from "@/stores/app";
+import { Bot, PlusIcon } from "lucide-react";
 
 const MAX_FILES = 10;
 
-// Attachment button that directly opens the file browser
 function AddAttachmentButton() {
   const attachments = usePromptInputAttachments();
   const isFull = attachments.files.length >= MAX_FILES;
@@ -46,7 +45,6 @@ function AddAttachmentButton() {
   );
 }
 
-// Attachment previews in the input box (above textarea)
 function AttachmentPreviews() {
   const attachments = usePromptInputAttachments();
   if (attachments.files.length === 0) return null;
@@ -82,11 +80,8 @@ export function ChatInput() {
     canChangeAgent,
     setAgentId,
     agents,
-    browserProfiles,
-    selectedProfileId,
-    setSelectedProfileId,
   } = useChatContext();
-  const modelReady = useAppStore((s) => s.modelReady);
+  const modelReady = useAppRuntimeStore((s) => s.modelReady);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const effectiveAgentId = currentChatAgentId ?? agentId;
 
@@ -105,7 +100,9 @@ export function ChatInput() {
     if (!text && msg.files.length === 0) return;
 
     if (!modelReady) {
-      alert(t.settings.modelNotConfigured);
+      notify.error(t.settings.modelNotConfigured, {
+        durationMs: 6000,
+      });
       return;
     }
 
@@ -113,15 +110,13 @@ export function ChatInput() {
       msg.files,
       uploadChatAttachment,
     ).catch((error) => {
-      alert(error instanceof Error ? error.message : String(error));
+      notify.error(error instanceof Error ? error.message : String(error), {
+        durationMs: 6000,
+      });
       throw error;
     });
 
-    send(
-      text,
-      selectedProfileId,
-      attachments.length > 0 ? attachments : undefined,
-    );
+    send(text, attachments.length > 0 ? attachments : undefined);
   };
 
   return (
@@ -163,35 +158,6 @@ export function ChatInput() {
                       data-testid={`agent-option-${a.id}`}
                     >
                       {a.name}
-                    </PromptInputSelectItem>
-                  ))}
-                </PromptInputSelectContent>
-              </PromptInputSelect>
-            )}
-            {browserProfiles.length > 0 && (
-              <PromptInputSelect
-                value={selectedProfileId ?? "__none__"}
-                onValueChange={(v) =>
-                  setSelectedProfileId(v === "__none__" ? null : v)
-                }
-              >
-                <PromptInputSelectTrigger
-                  className="h-7 text-xs gap-1"
-                  data-testid="chat-browser-profile-trigger"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  <PromptInputSelectValue />
-                </PromptInputSelectTrigger>
-                <PromptInputSelectContent>
-                  <PromptInputSelectItem
-                    value="__none__"
-                    data-testid="chat-browser-profile-none"
-                  >
-                    {t.chat.noBrowserProfile}
-                  </PromptInputSelectItem>
-                  {browserProfiles.map((p) => (
-                    <PromptInputSelectItem key={p.id} value={p.id}>
-                      {p.name}
                     </PromptInputSelectItem>
                   ))}
                 </PromptInputSelectContent>

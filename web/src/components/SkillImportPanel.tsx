@@ -24,7 +24,7 @@ import {
   type SkillImportMode,
 } from '@/lib/skill-import'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import { Download, Loader2, Sparkles, X } from 'lucide-react'
 
 const URL_SOURCE_EXAMPLES = [
@@ -54,7 +54,6 @@ export function SkillUrlImportDialog({
   existingSkillNames?: string[]
 }) {
   const { t } = useI18n()
-  const showGlobalBubble = useAppStore((state) => state.showGlobalBubble)
   const [url, setUrl] = useState('')
   const [probeResult, setProbeResult] = useState<ImportProbeResponse | null>(null)
   const [actionStatus, setActionStatus] = useState<'idle' | 'probing' | 'importing'>('idle')
@@ -119,21 +118,18 @@ export function SkillUrlImportDialog({
       const nextSuggestedName = nextProbeResult.suggestedName?.trim() || ''
       if (nextSuggestedName && existingSkillNameSet.has(nextSuggestedName)) {
         const message = t.skills.importSkillAlreadyExists.replace('{name}', nextSuggestedName)
-        showGlobalBubble({ type: 'error', message })
+        notify.error(message)
         return
       }
 
       await runImport(normalizedUrl, importMode)
       await onImported()
       onOpenChange(false)
-      showGlobalBubble({ message: t.skills.importSuccess })
+      notify.success(t.skills.importSuccess)
     } catch (error) {
       const message = getMappedImportErrorMessage(importMode, error, t)
       setActionError(message)
-      showGlobalBubble({
-        type: 'error',
-        message,
-      })
+      notify.error(message)
     } finally {
       setActionStatus('idle')
     }
@@ -147,14 +143,13 @@ export function SkillUrlImportDialog({
     probeResult,
     runImport,
     runProbe,
-    showGlobalBubble,
     t,
   ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[min(92vw,760px)] max-w-3xl overflow-hidden rounded-[28px] border border-border/70 bg-background p-0 shadow-2xl">
-          <DialogHeader className="border-b border-border/70 px-8 py-7 text-left">
+      <DialogContent className="w-[min(92vw,760px)] max-w-3xl overflow-hidden rounded-[28px] border border-border/70 bg-background p-0 shadow-2xl">
+        <DialogHeader className="border-b border-border/70 px-8 py-7 text-left">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <div className="space-y-1">

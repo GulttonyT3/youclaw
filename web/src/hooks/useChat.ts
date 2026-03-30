@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { sendMessage, getMessages, abortChat } from '../api/client'
 import { useChatStore, onChatUpdate } from '../stores/chat'
-import { sseManager } from '../lib/sse-manager'
+import { socketManager } from '../lib/socket-manager'
 import type { Attachment } from '../types/attachment'
 import type { ChatState, Message, TimelineItem, ToolUseItem } from '../stores/chat'
 
@@ -29,12 +29,12 @@ export function useChatProcessing(chatId: string): boolean {
 
 /**
  * Chat actions. selectedAgentId is used for new chats; existing chats use their bound agent.
+ * Browser selection is handled by agent/runtime configuration, not by chat UI.
  */
 export function useChatActions(selectedAgentId: string) {
   const send = useCallback(
     async (
       prompt: string,
-      browserProfileId?: string | null,
       attachments?: Attachment[],
     ) => {
       const store = useChatStore.getState()
@@ -64,20 +64,14 @@ export function useChatActions(selectedAgentId: string) {
       // Set processing
       store.setProcessing(effectiveChatId, true)
 
-      // Connect SSE
-      sseManager.connect(effectiveChatId)
-
-      // Wait for EventSource connection if new chat
-      if (!currentChatId) {
-        await new Promise((r) => setTimeout(r, 100))
-      }
+      socketManager.ensureConnected()
 
       try {
         await sendMessage(
           effectiveAgentId,
           prompt,
           effectiveChatId,
-          browserProfileId,
+          undefined,
           attachments,
           messageId,
         )
@@ -111,8 +105,8 @@ export function useChatActions(selectedAgentId: string) {
     store.setActiveChatId(chatId)
 
     const existing = store.chats[chatId]
-    if (existing?.isProcessing && !sseManager.isConnected(chatId)) {
-      sseManager.connect(chatId)
+    if (existing?.isProcessing && !socketManager.isConnected()) {
+      socketManager.ensureConnected()
     }
 
     const msgs = await getMessages(chatId)
@@ -152,7 +146,7 @@ export function useChatActions(selectedAgentId: string) {
     const chatId = store.activeChatId
     if (!chatId) return
 
-    // Keep SSE connected so the backend can deliver the final
+    // Keep the realtime socket connected so the backend can deliver the final
     // partial assistant reply and processing=false after abort.
     abortChat(chatId).catch(() => {})
   }, [])
