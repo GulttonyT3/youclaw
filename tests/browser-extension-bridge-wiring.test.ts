@@ -20,14 +20,14 @@ describe('browser extension bridge wiring', () => {
     expect(routes).toContain('extensionCorsHeaders()')
   })
 
-  test('extension skeleton posts current tab metadata to the local bridge endpoint', () => {
+  test('extension bridge posts current tab metadata and drives the tab through chrome.debugger', () => {
     const manifest = read('extensions/main-browser-chromium/manifest.json')
     const popup = read('extensions/main-browser-chromium/popup.js')
     const worker = read('extensions/main-browser-chromium/service-worker.js')
     const popupHtml = read('extensions/main-browser-chromium/popup.html')
 
     expect(manifest).toContain('"manifest_version": 3')
-    expect(manifest).toContain('"permissions": ["tabs", "activeTab", "storage", "scripting"]')
+    expect(manifest).toContain('"permissions": ["tabs", "storage", "debugger"]')
     expect(manifest).toContain('"host_permissions": ["http://127.0.0.1:*/*", "http://localhost:*/*"]')
     expect(popup).toContain('/api/browser/main-bridge/extension-attach')
     expect(popupHtml).toContain('Connect Current Tab')
@@ -48,6 +48,9 @@ describe('browser extension bridge wiring', () => {
     expect(worker).toContain('/api/browser/main-bridge/extension-result')
     expect(worker).toContain('/api/browser/main-bridge/extension-sync')
     expect(worker).toContain('executeCommand(command)')
+    expect(worker).toContain('chrome.debugger.attach')
+    expect(worker).toContain("Runtime.evaluate")
+    expect(worker).toContain("Page.captureScreenshot")
     expect(worker).toContain('bridgeTabId')
     expect(worker).toContain('chrome.tabs.onUpdated.addListener')
     expect(worker).toContain('chrome.tabs.onRemoved.addListener')

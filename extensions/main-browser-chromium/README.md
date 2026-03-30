@@ -5,7 +5,8 @@ Load this directory as an unpacked Chromium extension during development.
 Current capabilities:
 
 1. Accept a backend URL and pairing code from the YouClaw app
-2. Read the current active tab
+2. Attach the current tab through `chrome.debugger`
 3. Send current tab metadata to `POST /api/browser/main-bridge/extension-attach`
+4. Poll YouClaw for browser commands and execute them through the Chrome DevTools Protocol
 
-This is a bridge skeleton. It does not yet proxy browser actions from YouClaw back into the extension runtime.
+The bridge no longer depends on broad website host permissions for DOM access. Tab automation runs through `chrome.debugger`, similar to OpenClaw's main-browser attach model.

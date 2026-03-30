@@ -187,18 +187,15 @@ async function connectCurrentTab() {
     throw new Error(body?.error || `Attach failed: ${res.status}`)
   }
 
-  await chrome.storage.local.set({
-    backendUrl,
-    bridgeProfileId: body?.state?.profileId ?? null,
-    bridgeTabId: tab.id != null ? String(tab.id) : null,
-    pairingCode,
-  })
-  chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     type: 'bridge-attached',
     backendUrl,
     profileId: body?.state?.profileId ?? null,
     tabId: tab.id != null ? String(tab.id) : null,
   })
+  if (!response?.ok) {
+    throw new Error(response?.error || 'Failed to attach debugger to the current tab')
+  }
 
   return body
 }
@@ -227,13 +224,12 @@ async function disconnectCurrentTab() {
     throw new Error(body?.error || `Disconnect failed: ${res.status}`)
   }
 
-  await chrome.storage.local.set({
-    bridgeProfileId: null,
-    bridgeTabId: null,
-  })
-  chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     type: 'bridge-detached',
   })
+  if (!response?.ok) {
+    throw new Error(response?.error || 'Failed to detach debugger from the current tab')
+  }
 }
 
 connectButton.addEventListener('click', async () => {
