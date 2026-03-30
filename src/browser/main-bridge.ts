@@ -95,6 +95,7 @@ export function buildBrowserMainBridgeState(
   const resolved = resolveSelectedBrowser(profile, discovery)
   const session = getBrowserMainBridgeSession(profile.id)
   const extensionSession = getExtensionBridgeSession(profile.id)
+  const hasAttachedExtensionTab = Boolean(extensionSession?.tabId)
   const pairing = getMainBridgePairingCode(profile.id)
   const status: BrowserMainBridgeState['status'] =
     relay.connected
@@ -106,7 +107,7 @@ export function buildBrowserMainBridgeState(
           : 'no_browser_detected'
   const connectionMode: BrowserMainBridgeState['connectionMode'] = session
     ? 'main-bridge'
-    : extensionSession
+    : hasAttachedExtensionTab
       ? 'extension-bridge'
     : relay.connected
       ? 'manual-cdp-fallback'

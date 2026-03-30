@@ -30,10 +30,20 @@ function humanizeBridgeError(error) {
   if (normalized.includes('invalid pairing code')) {
     return 'The pairing code is invalid. Copy the latest code from YouClaw and try again.'
   }
+  if (normalized.includes('invalid browser extension session token') || normalized.includes('browser extension session not found')) {
+    return 'This browser bridge session is no longer valid. Generate a new pairing code in YouClaw to pair again.'
+  }
   if (normalized.includes('failed to fetch') || normalized.includes('networkerror')) {
     return 'Cannot reach the YouClaw backend. Check the backend URL and make sure the app is running.'
   }
   return message
+}
+
+function isBridgeSessionError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('invalid browser extension session token')
+    || normalized.includes('browser extension session not found')
 }
 
 function describeTab(tab) {
@@ -50,6 +60,7 @@ async function getStoredBridgeState() {
     backendUrl: 'http://127.0.0.1:62601',
     pairingCode: '',
     bridgeProfileId: null,
+    bridgeSessionToken: null,
     bridgeTabId: null,
   })
 }
@@ -115,18 +126,25 @@ async function refreshUi() {
   const activeTabId = currentTab?.id != null ? String(currentTab.id) : null
   const attachedTabId = stored.bridgeTabId ? String(stored.bridgeTabId) : null
   const attachedTab = await getAttachedTab(attachedTabId)
-  const hasBridge = !!stored.bridgeProfileId && !!attachedTabId
+  const hasSession = !!stored.bridgeProfileId && !!stored.bridgeSessionToken
+  const hasAttachedTab = hasSession && !!attachedTabId
 
   currentTabPanel.textContent = describeTab(currentTab)
-  attachedTabPanel.textContent = hasBridge
+  attachedTabPanel.textContent = hasAttachedTab
     ? describeTab(attachedTab) + (attachedTabId ? `\n(tab id: ${attachedTabId})` : '')
     : 'No tab connected.'
 
-  disconnectButton.disabled = !hasBridge
+  disconnectButton.disabled = !hasAttachedTab
 
-  if (!hasBridge) {
+  if (!hasSession) {
     connectButton.textContent = 'Connect Current Tab'
-    setStatus('No tab is currently connected.')
+    setStatus('No browser bridge is paired yet.')
+    return
+  }
+
+  if (!hasAttachedTab) {
+    connectButton.textContent = 'Connect Current Tab'
+    setStatus('No tab is attached right now. Use this button to attach the current tab.')
     return
   }
 
@@ -141,11 +159,9 @@ async function refreshUi() {
 }
 
 async function connectCurrentTab() {
-  const backendUrl = normalizeBackendUrl(backendInput.value)
+  const stored = await getStoredBridgeState()
+  const backendUrl = normalizeBackendUrl(backendInput.value || stored.backendUrl)
   const pairingCode = pairingInput.value.trim()
-  if (!backendUrl || !pairingCode) {
-    throw new Error('Backend URL and pairing code are required')
-  }
 
   const reachable = await checkBackendHealth(backendUrl)
   if (!reachable) {
@@ -167,20 +183,62 @@ async function connectCurrentTab() {
       : navigator.userAgent.includes('Chrome')
         ? 'chrome'
         : 'chromium'
+  const bodyPayload = {
+    browserId: null,
+    browserName,
+    browserKind,
+    tabId: tab.id != null ? String(tab.id) : null,
+    tabUrl: tab.url ?? null,
+    tabTitle: tab.title ?? null,
+    extensionVersion: chrome.runtime.getManifest().version,
+  }
 
-  const res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-attach`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      pairingCode,
-      browserName,
-      browserKind,
-      tabId: tab.id != null ? String(tab.id) : null,
-      tabUrl: tab.url ?? null,
-      tabTitle: tab.title ?? null,
-      extensionVersion: chrome.runtime.getManifest().version,
-    }),
-  })
+  let res
+  if (stored.bridgeProfileId && stored.bridgeSessionToken) {
+    res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-switch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profileId: stored.bridgeProfileId,
+        sessionToken: stored.bridgeSessionToken,
+        ...bodyPayload,
+      }),
+    })
+
+    if (!res.ok) {
+      const failedBody = await res.json().catch(() => null)
+      const error = new Error(failedBody?.error || `Attach failed: ${res.status}`)
+      if (isBridgeSessionError(error) && pairingCode) {
+        await chrome.storage.local.set({
+          bridgeProfileId: null,
+          bridgeSessionToken: null,
+          bridgeTabId: null,
+        })
+        res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-attach`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pairingCode,
+            ...bodyPayload,
+          }),
+        })
+      } else {
+        throw error
+      }
+    }
+  } else {
+    if (!pairingCode) {
+      throw new Error('Backend URL and pairing code are required')
+    }
+    res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-attach`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pairingCode,
+        ...bodyPayload,
+      }),
+    })
+  }
 
   const body = await res.json().catch(() => null)
   if (!res.ok) {
@@ -191,6 +249,7 @@ async function connectCurrentTab() {
     type: 'bridge-attached',
     backendUrl,
     profileId: body?.state?.profileId ?? null,
+    sessionToken: body?.sessionToken ?? stored.bridgeSessionToken ?? null,
     tabId: tab.id != null ? String(tab.id) : null,
   })
   if (!response?.ok) {
@@ -203,19 +262,16 @@ async function connectCurrentTab() {
 async function disconnectCurrentTab() {
   const stored = await getStoredBridgeState()
   const backendUrl = normalizeBackendUrl(stored.backendUrl)
-  if (!backendUrl || !stored.bridgeProfileId) {
+  if (!backendUrl || !stored.bridgeProfileId || !stored.bridgeSessionToken) {
     throw new Error('No connected bridge session found')
   }
 
-  const res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-sync`, {
+  const res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-detach`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       profileId: stored.bridgeProfileId,
-      tabId: null,
-      tabUrl: null,
-      tabTitle: null,
-      extensionVersion: chrome.runtime.getManifest().version,
+      sessionToken: stored.bridgeSessionToken,
     }),
   })
 
@@ -226,6 +282,7 @@ async function disconnectCurrentTab() {
 
   const response = await chrome.runtime.sendMessage({
     type: 'bridge-detached',
+    preserveSession: true,
   })
   if (!response?.ok) {
     throw new Error(response?.error || 'Failed to detach debugger from the current tab')

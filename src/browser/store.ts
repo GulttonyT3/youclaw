@@ -368,3 +368,43 @@ export function clearChatBrowserState(chatId: string): void {
   const db = getDatabase()
   db.run('DELETE FROM chat_browser_state WHERE chat_id = ?', [chatId])
 }
+
+export function syncChatBrowserStatesForProfile(profileId: string, patch: {
+  activeTargetId?: string | null
+  activePageUrl?: string | null
+  activePageTitle?: string | null
+}): number {
+  const db = getDatabase()
+  const fields: string[] = []
+  const values: Array<string | null> = []
+
+  if (patch.activeTargetId !== undefined) {
+    fields.push('active_target_id = ?')
+    values.push(patch.activeTargetId)
+  }
+  if (patch.activePageUrl !== undefined) {
+    fields.push('active_page_url = ?')
+    values.push(patch.activePageUrl)
+  }
+  if (patch.activePageTitle !== undefined) {
+    fields.push('active_page_title = ?')
+    values.push(patch.activePageTitle)
+  }
+
+  if (fields.length === 0) {
+    return 0
+  }
+
+  fields.push('updated_at = ?')
+  values.push(new Date().toISOString())
+  values.push(profileId)
+
+  const result = db.run(
+    `UPDATE chat_browser_state
+     SET ${fields.join(', ')}
+     WHERE profile_id = ?`,
+    values,
+  )
+
+  return Number(result.changes ?? 0)
+}

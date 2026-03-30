@@ -7,6 +7,7 @@ type PairingEntry = {
 }
 
 export interface BrowserExtensionBridgeSession {
+  sessionToken: string
   browserId: string | null
   browserName: string | null
   browserKind: BrowserDiscoveryKind | null
@@ -50,6 +51,10 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 15_000
 
 function createPairingCode(): string {
   return randomBytes(4).toString('hex')
+}
+
+function createSessionToken(): string {
+  return randomBytes(24).toString('base64url')
 }
 
 export function createMainBridgePairingCode(profileId: string, ttlMs = DEFAULT_PAIRING_TTL_MS): { pairingCode: string; expiresAt: string } {
@@ -102,13 +107,14 @@ export function setExtensionBridgeSession(profileId: string, patch: {
   const now = new Date().toISOString()
 
   const next: BrowserExtensionBridgeSession = {
-    browserId: patch.browserId ?? current?.browserId ?? null,
-    browserName: patch.browserName ?? current?.browserName ?? null,
-    browserKind: patch.browserKind ?? current?.browserKind ?? null,
-    tabId: patch.tabId ?? current?.tabId ?? null,
-    tabUrl: patch.tabUrl ?? current?.tabUrl ?? null,
-    tabTitle: patch.tabTitle ?? current?.tabTitle ?? null,
-    extensionVersion: patch.extensionVersion ?? current?.extensionVersion ?? null,
+    sessionToken: current?.sessionToken ?? createSessionToken(),
+    browserId: patch.browserId !== undefined ? patch.browserId : current?.browserId ?? null,
+    browserName: patch.browserName !== undefined ? patch.browserName : current?.browserName ?? null,
+    browserKind: patch.browserKind !== undefined ? patch.browserKind : current?.browserKind ?? null,
+    tabId: patch.tabId !== undefined ? patch.tabId : current?.tabId ?? null,
+    tabUrl: patch.tabUrl !== undefined ? patch.tabUrl : current?.tabUrl ?? null,
+    tabTitle: patch.tabTitle !== undefined ? patch.tabTitle : current?.tabTitle ?? null,
+    extensionVersion: patch.extensionVersion !== undefined ? patch.extensionVersion : current?.extensionVersion ?? null,
     connectedAt: current?.connectedAt ?? now,
     updatedAt: now,
   }
@@ -132,6 +138,26 @@ export function syncExtensionBridgeSession(profileId: string, patch: {
   }
 
   return setExtensionBridgeSession(profileId, patch)
+}
+
+export function assertExtensionBridgeSessionToken(profileId: string, sessionToken: string): BrowserExtensionBridgeSession {
+  const current = extensionSessions.get(profileId)
+  if (!current) {
+    throw new Error('Browser extension session not found')
+  }
+  if (current.sessionToken !== sessionToken.trim()) {
+    throw new Error('Invalid browser extension session token')
+  }
+  return current
+}
+
+export function detachExtensionBridgeTab(profileId: string, sessionToken: string): BrowserExtensionBridgeSession {
+  assertExtensionBridgeSessionToken(profileId, sessionToken)
+  return setExtensionBridgeSession(profileId, {
+    tabId: null,
+    tabUrl: null,
+    tabTitle: null,
+  })
 }
 
 export function clearExtensionBridgeSession(profileId: string): void {

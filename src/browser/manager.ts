@@ -13,6 +13,7 @@ import {
   getBrowserProfile,
   getBrowserProfileRuntime,
   listBrowserProfiles,
+  syncChatBrowserStatesForProfile,
   updateBrowserProfile,
   upsertBrowserProfileRuntime,
 } from './store.ts'
@@ -50,9 +51,11 @@ import {
   updateBrowserSetupSession,
 } from './setup-session.ts'
 import {
+  assertExtensionBridgeSessionToken,
   clearExtensionBridgeSession,
   createMainBridgePairingCode,
   deleteExtensionBridgeProfile,
+  detachExtensionBridgeTab,
   consumeMainBridgePairingCode,
   setExtensionBridgeSession,
   syncExtensionBridgeSession,
@@ -405,11 +408,11 @@ export class BrowserManager {
     tabUrl?: string | null
     tabTitle?: string | null
     extensionVersion?: string | null
-  }): BrowserMainBridgeState {
+  }): { state: BrowserMainBridgeState; sessionToken: string } {
     const resolved = consumeMainBridgePairingCode(params.pairingCode)
     const container = this.resolveMainBridgeContainer(resolved.profileId)
 
-    setExtensionBridgeSession(resolved.profileId, {
+    const session = setExtensionBridgeSession(resolved.profileId, {
       browserId: params.browserId ?? null,
       browserName: params.browserName ?? null,
       browserKind: params.browserKind ?? null,
@@ -419,9 +422,76 @@ export class BrowserManager {
       extensionVersion: params.extensionVersion ?? null,
     })
 
-    return container.kind === 'profile'
+    syncChatBrowserStatesForProfile(resolved.profileId, {
+      activeTargetId: null,
+      activePageUrl: params.tabUrl ?? null,
+      activePageTitle: params.tabTitle ?? null,
+    })
+
+    const state = container.kind === 'profile'
       ? buildBrowserMainBridgeState(container.profile, getBrowserRelayState(resolved.profileId))
       : buildBrowserMainBridgeState(container.profile, buildSetupSessionRelayState(getBrowserSetupSession(resolved.profileId)!))
+
+    return {
+      state,
+      sessionToken: session.sessionToken,
+    }
+  }
+
+  switchExtensionMainBridge(params: {
+    profileId: string
+    sessionToken: string
+    browserId?: string | null
+    browserName?: string | null
+    browserKind?: BrowserDiscoveryKind | null
+    tabId?: string | null
+    tabUrl?: string | null
+    tabTitle?: string | null
+    extensionVersion?: string | null
+  }): { state: BrowserMainBridgeState; sessionToken: string } {
+    const container = this.resolveMainBridgeContainer(params.profileId)
+    const current = assertExtensionBridgeSessionToken(params.profileId, params.sessionToken)
+    const session = setExtensionBridgeSession(params.profileId, {
+      browserId: params.browserId ?? current.browserId,
+      browserName: params.browserName ?? current.browserName,
+      browserKind: params.browserKind ?? current.browserKind,
+      tabId: params.tabId ?? null,
+      tabUrl: params.tabUrl ?? null,
+      tabTitle: params.tabTitle ?? null,
+      extensionVersion: params.extensionVersion ?? current.extensionVersion,
+    })
+
+    syncChatBrowserStatesForProfile(params.profileId, {
+      activeTargetId: null,
+      activePageUrl: params.tabUrl ?? null,
+      activePageTitle: params.tabTitle ?? null,
+    })
+
+    const state = container.kind === 'profile'
+      ? buildBrowserMainBridgeState(container.profile, getBrowserRelayState(params.profileId))
+      : buildBrowserMainBridgeState(container.profile, buildSetupSessionRelayState(getBrowserSetupSession(params.profileId)!))
+
+    return {
+      state,
+      sessionToken: session.sessionToken,
+    }
+  }
+
+  detachExtensionMainBridge(params: {
+    profileId: string
+    sessionToken: string
+  }): BrowserMainBridgeState {
+    const container = this.resolveMainBridgeContainer(params.profileId)
+    detachExtensionBridgeTab(params.profileId, params.sessionToken)
+    syncChatBrowserStatesForProfile(params.profileId, {
+      activeTargetId: null,
+      activePageUrl: null,
+      activePageTitle: null,
+    })
+
+    return container.kind === 'profile'
+      ? buildBrowserMainBridgeState(container.profile, getBrowserRelayState(params.profileId))
+      : buildBrowserMainBridgeState(container.profile, buildSetupSessionRelayState(getBrowserSetupSession(params.profileId)!))
   }
 
   disconnectExtensionMainBridge(id: string): BrowserMainBridgeState {
@@ -432,6 +502,7 @@ export class BrowserManager {
 
   syncExtensionMainBridge(params: {
     profileId: string
+    sessionToken: string
     browserId?: string | null
     browserName?: string | null
     browserKind?: BrowserDiscoveryKind | null
@@ -441,9 +512,15 @@ export class BrowserManager {
     extensionVersion?: string | null
   }): BrowserMainBridgeState {
     this.resolveMainBridgeContainer(params.profileId)
+    assertExtensionBridgeSessionToken(params.profileId, params.sessionToken)
 
     if (params.tabId === null) {
-      clearExtensionBridgeSession(params.profileId)
+      detachExtensionBridgeTab(params.profileId, params.sessionToken)
+      syncChatBrowserStatesForProfile(params.profileId, {
+        activeTargetId: null,
+        activePageUrl: null,
+        activePageTitle: null,
+      })
     } else {
       syncExtensionBridgeSession(params.profileId, {
         browserId: params.browserId ?? null,
@@ -453,6 +530,11 @@ export class BrowserManager {
         tabUrl: params.tabUrl ?? null,
         tabTitle: params.tabTitle ?? null,
         extensionVersion: params.extensionVersion ?? null,
+      })
+      syncChatBrowserStatesForProfile(params.profileId, {
+        activeTargetId: null,
+        activePageUrl: params.tabUrl ?? null,
+        activePageTitle: params.tabTitle ?? null,
       })
     }
 

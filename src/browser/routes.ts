@@ -67,6 +67,23 @@ const ExtensionMainBridgeAttachSchema = z.object({
   extensionVersion: z.string().nullable().optional(),
 })
 
+const ExtensionMainBridgeSwitchSchema = z.object({
+  profileId: z.string().min(1),
+  sessionToken: z.string().min(1),
+  browserId: z.string().nullable().optional(),
+  browserName: z.string().nullable().optional(),
+  browserKind: z.enum(['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'arc']).nullable().optional(),
+  tabId: z.string().nullable().optional(),
+  tabUrl: z.string().nullable().optional(),
+  tabTitle: z.string().nullable().optional(),
+  extensionVersion: z.string().nullable().optional(),
+})
+
+const ExtensionMainBridgeDetachSchema = z.object({
+  profileId: z.string().min(1),
+  sessionToken: z.string().min(1),
+})
+
 const ExtensionMainBridgePollSchema = z.object({
   profileId: z.string().min(1),
 })
@@ -81,6 +98,7 @@ const ExtensionMainBridgeResultSchema = z.object({
 
 const ExtensionMainBridgeSyncSchema = z.object({
   profileId: z.string().min(1),
+  sessionToken: z.string().min(1),
   browserId: z.string().nullable().optional(),
   browserName: z.string().nullable().optional(),
   browserKind: z.enum(['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'arc']).nullable().optional(),
@@ -96,6 +114,7 @@ function routeErrorStatus(err: unknown): 400 | 401 | 404 | 500 {
   if (message === 'Browser profile not found' || message === 'Browser setup session not found') return 404
   if (
     message.includes('extension-relay') ||
+    message.includes('browser extension session') ||
     message.includes('CDP URL') ||
     message.includes('loopback')
   ) {
@@ -380,7 +399,45 @@ export function createBrowserRoutes(browserManager: BrowserManager, _agentManage
     }
 
     try {
-      const state = browserManager.attachExtensionMainBridge(parsed.data)
+      const result = browserManager.attachExtensionMainBridge(parsed.data)
+      return c.json({ ok: true, state: result.state, sessionToken: result.sessionToken }, { headers: extensionCorsHeaders() })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return c.json({ error: message }, { status: routeErrorStatus(err), headers: extensionCorsHeaders() })
+    }
+  })
+
+  app.options('/browser/main-bridge/extension-switch', () => {
+    return new Response(null, { status: 204, headers: extensionCorsHeaders() })
+  })
+
+  app.post('/browser/main-bridge/extension-switch', async (c) => {
+    const parsed = ExtensionMainBridgeSwitchSchema.safeParse(await c.req.json())
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.issues }, { status: 400, headers: extensionCorsHeaders() })
+    }
+
+    try {
+      const result = browserManager.switchExtensionMainBridge(parsed.data)
+      return c.json({ ok: true, state: result.state, sessionToken: result.sessionToken }, { headers: extensionCorsHeaders() })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return c.json({ error: message }, { status: routeErrorStatus(err), headers: extensionCorsHeaders() })
+    }
+  })
+
+  app.options('/browser/main-bridge/extension-detach', () => {
+    return new Response(null, { status: 204, headers: extensionCorsHeaders() })
+  })
+
+  app.post('/browser/main-bridge/extension-detach', async (c) => {
+    const parsed = ExtensionMainBridgeDetachSchema.safeParse(await c.req.json())
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.issues }, { status: 400, headers: extensionCorsHeaders() })
+    }
+
+    try {
+      const state = browserManager.detachExtensionMainBridge(parsed.data)
       return c.json({ ok: true, state }, { headers: extensionCorsHeaders() })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import './setup.ts'
-import { BrowserManager } from '../src/browser/index.ts'
+import { BrowserManager, getChatBrowserState, upsertChatBrowserState } from '../src/browser/index.ts'
 import { createBrowserProfilesRoutes } from '../src/routes/browser-profiles.ts'
 import { cleanTables } from './setup.ts'
 
@@ -164,14 +164,59 @@ describe('browser extension relay', () => {
       extensionVersion: '0.1.0',
     })
 
-    expect(attached.status).toBe('paired')
-    expect(attached.connectionMode).toBe('extension-bridge')
-    expect(attached.connectedBrowserName).toBe('Google Chrome')
-    expect(attached.connectedTabUrl).toBe('https://example.com/current')
-    expect(attached.extensionVersion).toBe('0.1.0')
+    expect(attached.sessionToken).toBeTruthy()
+    expect(attached.state.status).toBe('paired')
+    expect(attached.state.connectionMode).toBe('extension-bridge')
+    expect(attached.state.connectedBrowserName).toBe('Google Chrome')
+    expect(attached.state.connectedTabUrl).toBe('https://example.com/current')
+    expect(attached.state.extensionVersion).toBe('0.1.0')
   })
 
-  test('syncExtensionMainBridge refreshes or clears the attached extension tab state', async () => {
+  test('switchExtensionMainBridge reuses the session token to move the bridge to another tab', async () => {
+    const manager = new FakeRelayBrowserManager()
+    const profile = manager.createProfile({
+      name: 'Extension Sync',
+      driver: 'extension-relay',
+    })
+    upsertChatBrowserState('chat-switch', {
+      agentId: 'agent-1',
+      profileId: profile.id,
+      activePageUrl: 'https://example.com/start',
+      activePageTitle: 'Start',
+      activeTargetId: 'old-target',
+    })
+
+    const pairedState = manager.createMainBridgePairing(profile.id)
+    const attached = manager.attachExtensionMainBridge({
+      pairingCode: pairedState.pairingCode!,
+      browserId: 'chrome',
+      browserName: 'Google Chrome',
+      browserKind: 'chrome',
+      tabId: '9',
+      tabUrl: 'https://example.com/start',
+      tabTitle: 'Start',
+      extensionVersion: '0.1.0',
+    })
+
+    const switched = manager.switchExtensionMainBridge({
+      profileId: profile.id,
+      sessionToken: attached.sessionToken,
+      tabId: '11',
+      tabUrl: 'https://example.com/next',
+      tabTitle: 'Next',
+      extensionVersion: '0.1.1',
+    })
+
+    expect(switched.sessionToken).toBe(attached.sessionToken)
+    expect(switched.state.connectedTabUrl).toBe('https://example.com/next')
+    expect(switched.state.connectedTabTitle).toBe('Next')
+    expect(switched.state.connectionMode).toBe('extension-bridge')
+    expect(getChatBrowserState('chat-switch')?.activePageUrl).toBe('https://example.com/next')
+    expect(getChatBrowserState('chat-switch')?.activePageTitle).toBe('Next')
+    expect(getChatBrowserState('chat-switch')?.activeTargetId).toBeNull()
+  })
+
+  test('syncExtensionMainBridge refreshes the attached extension tab state with a valid session token', async () => {
     const manager = new FakeRelayBrowserManager()
     const profile = manager.createProfile({
       name: 'Extension Sync',
@@ -179,7 +224,7 @@ describe('browser extension relay', () => {
     })
 
     const pairedState = manager.createMainBridgePairing(profile.id)
-    manager.attachExtensionMainBridge({
+    const attached = manager.attachExtensionMainBridge({
       pairingCode: pairedState.pairingCode!,
       browserId: 'chrome',
       browserName: 'Google Chrome',
@@ -192,6 +237,7 @@ describe('browser extension relay', () => {
 
     const refreshed = manager.syncExtensionMainBridge({
       profileId: profile.id,
+      sessionToken: attached.sessionToken,
       tabId: '9',
       tabUrl: 'https://example.com/updated',
       tabTitle: 'Updated',
@@ -201,16 +247,55 @@ describe('browser extension relay', () => {
     expect(refreshed.connectedTabUrl).toBe('https://example.com/updated')
     expect(refreshed.connectedTabTitle).toBe('Updated')
     expect(refreshed.extensionVersion).toBe('0.1.1')
+  })
 
-    const cleared = manager.syncExtensionMainBridge({
+  test('detachExtensionMainBridge clears the attached tab but keeps the bridge session reusable', async () => {
+    const manager = new FakeRelayBrowserManager()
+    const profile = manager.createProfile({
+      name: 'Extension Detach',
+      driver: 'extension-relay',
+    })
+    upsertChatBrowserState('chat-detach', {
+      agentId: 'agent-1',
       profileId: profile.id,
-      tabId: null,
-      tabUrl: null,
-      tabTitle: null,
+      activePageUrl: 'https://example.com/start',
+      activePageTitle: 'Start',
+      activeTargetId: 'old-target',
     })
 
-    expect(cleared.connectedTabUrl).toBeNull()
-    expect(cleared.connectedTabTitle).toBeNull()
-    expect(cleared.connectionMode).toBe('none')
+    const pairedState = manager.createMainBridgePairing(profile.id)
+    const attached = manager.attachExtensionMainBridge({
+      pairingCode: pairedState.pairingCode!,
+      browserId: 'chrome',
+      browserName: 'Google Chrome',
+      browserKind: 'chrome',
+      tabId: '9',
+      tabUrl: 'https://example.com/start',
+      tabTitle: 'Start',
+      extensionVersion: '0.1.0',
+    })
+
+    const detached = manager.detachExtensionMainBridge({
+      profileId: profile.id,
+      sessionToken: attached.sessionToken,
+    })
+
+    expect(detached.status).toBe('paired')
+    expect(detached.connectionMode).toBe('none')
+    expect(detached.connectedTabUrl).toBeNull()
+    expect(getChatBrowserState('chat-detach')?.activePageUrl).toBeNull()
+    expect(getChatBrowserState('chat-detach')?.activePageTitle).toBeNull()
+    expect(getChatBrowserState('chat-detach')?.activeTargetId).toBeNull()
+
+    const switched = manager.switchExtensionMainBridge({
+      profileId: profile.id,
+      sessionToken: attached.sessionToken,
+      tabId: '10',
+      tabUrl: 'https://example.com/reconnected',
+      tabTitle: 'Reconnected',
+    })
+
+    expect(switched.state.connectionMode).toBe('extension-bridge')
+    expect(switched.state.connectedTabUrl).toBe('https://example.com/reconnected')
   })
 })

@@ -78,11 +78,13 @@ async function getBridgeState() {
   const stored = await chrome.storage.local.get({
     backendUrl: 'http://127.0.0.1:62601',
     bridgeProfileId: null,
+    bridgeSessionToken: null,
     bridgeTabId: null,
   })
   return {
     backendUrl: normalizeBackendUrl(stored.backendUrl),
     profileId: stored.bridgeProfileId,
+    sessionToken: stored.bridgeSessionToken,
     tabId: stored.bridgeTabId,
   }
 }
@@ -297,11 +299,12 @@ async function dispatchClickAt(tabId, point) {
 }
 
 async function syncBridgeSession(patch = {}) {
-  const { backendUrl, profileId, tabId } = await getBridgeState()
-  if (!backendUrl || !profileId) return
+  const { backendUrl, profileId, sessionToken, tabId } = await getBridgeState()
+  if (!backendUrl || !profileId || !sessionToken) return
 
   const payload = {
     profileId,
+    sessionToken,
     tabId,
     ...patch,
   }
@@ -725,6 +728,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await chrome.storage.local.set({
         backendUrl: normalizeBackendUrl(message.backendUrl),
         bridgeProfileId: message.profileId ?? null,
+        bridgeSessionToken: message.sessionToken ?? null,
         bridgeTabId: message.tabId ?? null,
       })
       await syncBridgeSession({
@@ -743,10 +747,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (state.tabId != null) {
         await detachDebugger(state.tabId).catch(() => {})
       }
-      await chrome.storage.local.set({
-        bridgeProfileId: null,
-        bridgeTabId: null,
-      })
+      await chrome.storage.local.set(
+        message?.preserveSession
+          ? {
+              bridgeTabId: null,
+            }
+          : {
+              bridgeProfileId: null,
+              bridgeSessionToken: null,
+              bridgeTabId: null,
+            },
+      )
       sendResponse({ ok: true })
     }).catch((error) => {
       sendResponse({ ok: false, error: toErrorMessage(error) })

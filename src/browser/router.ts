@@ -74,45 +74,88 @@ export function createBrowserActionRouter(params: BrowserActionRouterParams): Br
     }
   }
 
-  const mainBridge = browserManager.getProfile(profileId)?.driver === 'extension-relay'
-    ? browserManager.getMainBridgeState(profileId)
-    : null
+  const resolveCurrentMainBridge = () =>
+    browserManager.getProfile(profileId)?.driver === 'extension-relay'
+      ? browserManager.getMainBridgeState(profileId)
+      : null
 
-  if (mainBridge?.connectionMode === 'extension-bridge') {
+  const isExtensionBridgeActive = () =>
+    resolveCurrentMainBridge()?.connectionMode === 'extension-bridge'
+
+  if (isExtensionBridgeActive()) {
     return {
       getStatus: async () => {
         const runtime = await browserManager.getProfileStatus(profileId)
         const profile = browserManager.getProfile(profileId)
         return { target, profile, runtime }
       },
-      listTabs: async () => ({
-        tabs: mainBridge.connectedTabId
-          ? [{
-              id: mainBridge.connectedTabId,
-              title: mainBridge.connectedTabTitle ?? undefined,
-              url: mainBridge.connectedTabUrl ?? undefined,
-              type: 'page',
-            }]
-          : [],
-      }),
-      openTab: async (url) =>
-        openTabForExtensionChat({ chatId, agentId, profileId, url }),
-      navigate: async (url) =>
-        navigateForExtensionChat({ chatId, agentId, profileId, url }),
-      snapshot: async () =>
-        snapshotForExtensionChat({ chatId, agentId, profileId }),
-      act: async ({ ref, action, text, option }) =>
-        actForExtensionChat({ chatId, agentId, profileId, ref, action, text, option }),
-      screenshot: async (path) =>
-        screenshotForExtensionChat({ chatId, agentId, profileId, path }),
-      click: async (selector) =>
-        clickForExtensionChat({ chatId, agentId, profileId, selector }),
-      type: async (selector, text) =>
-        typeForExtensionChat({ chatId, agentId, profileId, selector, text }),
-      pressKey: async (key) =>
-        pressKeyForExtensionChat({ chatId, agentId, profileId, key }),
-      closeTab: async (url) =>
-        closeTabForExtensionChat({ chatId, agentId, profileId, url }),
+      listTabs: async () => {
+        const mainBridge = resolveCurrentMainBridge()
+        return {
+          tabs: mainBridge?.connectedTabId
+            ? [{
+                id: mainBridge.connectedTabId,
+                title: mainBridge.connectedTabTitle ?? undefined,
+                url: mainBridge.connectedTabUrl ?? undefined,
+                type: 'page',
+              }]
+            : [],
+        }
+      },
+      openTab: async (url) => {
+        if (isExtensionBridgeActive()) {
+          return openTabForExtensionChat({ chatId, agentId, profileId, url })
+        }
+        return openTabForChat(browserManager, { chatId, agentId, profileId, url })
+      },
+      navigate: async (url) => {
+        if (isExtensionBridgeActive()) {
+          return navigateForExtensionChat({ chatId, agentId, profileId, url })
+        }
+        return navigateForChat(browserManager, { chatId, agentId, profileId, url })
+      },
+      snapshot: async () => {
+        if (isExtensionBridgeActive()) {
+          return snapshotForExtensionChat({ chatId, agentId, profileId })
+        }
+        return snapshotForChat(browserManager, { chatId, agentId, profileId })
+      },
+      act: async ({ ref, action, text, option }) => {
+        if (isExtensionBridgeActive()) {
+          return actForExtensionChat({ chatId, agentId, profileId, ref, action, text, option })
+        }
+        return actForChat(browserManager, { chatId, agentId, profileId, ref, action, text, option })
+      },
+      screenshot: async (path) => {
+        if (isExtensionBridgeActive()) {
+          return screenshotForExtensionChat({ chatId, agentId, profileId, path })
+        }
+        return screenshotForChat(browserManager, { chatId, agentId, profileId, path })
+      },
+      click: async (selector) => {
+        if (isExtensionBridgeActive()) {
+          return clickForExtensionChat({ chatId, agentId, profileId, selector })
+        }
+        return clickForChat(browserManager, { chatId, agentId, profileId, selector })
+      },
+      type: async (selector, text) => {
+        if (isExtensionBridgeActive()) {
+          return typeForExtensionChat({ chatId, agentId, profileId, selector, text })
+        }
+        return typeForChat(browserManager, { chatId, agentId, profileId, selector, text })
+      },
+      pressKey: async (key) => {
+        if (isExtensionBridgeActive()) {
+          return pressKeyForExtensionChat({ chatId, agentId, profileId, key })
+        }
+        return pressKeyForChat(browserManager, { chatId, agentId, profileId, key })
+      },
+      closeTab: async (url) => {
+        if (isExtensionBridgeActive()) {
+          return closeTabForExtensionChat({ chatId, agentId, profileId, url })
+        }
+        return closeTabForChat(browserManager, { chatId, agentId, profileId, url })
+      },
     }
   }
 

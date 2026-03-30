@@ -18,6 +18,7 @@ export {
   getChatBrowserState,
   upsertChatBrowserState,
   clearChatBrowserState,
+  syncChatBrowserStatesForProfile,
 } from './store.ts'
 export {
   DEFAULT_BROWSER_PROFILE_ID,
