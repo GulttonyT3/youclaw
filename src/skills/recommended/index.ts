@@ -1,4 +1,12 @@
-import { readFileSync } from 'node:fs'
+// Static imports so Bun bundler embeds JSON files into the compiled binary.
+import aiIntelligenceRaw from './ai-intelligence.json'
+import developerToolsRaw from './developer-tools.json'
+import productivityRaw from './productivity.json'
+import dataAnalysisRaw from './data-analysis.json'
+import contentCreationRaw from './content-creation.json'
+import securityComplianceRaw from './security-compliance.json'
+import communicationCollaborationRaw from './communication-collaboration.json'
+
 import {
   recommendationSourceFileOrder,
   type RecommendationSourceCategory,
@@ -20,10 +28,18 @@ type RecommendedEntryInput = Partial<RecommendedEntry> & Record<string, unknown>
 
 export type RecommendedShardMap = Record<RecommendedCategory, RecommendedEntry[]>
 
+const shardData: Record<RecommendedCategory, RecommendedEntryInput[]> = {
+  'ai-intelligence': aiIntelligenceRaw as RecommendedEntryInput[],
+  'developer-tools': developerToolsRaw as RecommendedEntryInput[],
+  'productivity': productivityRaw as RecommendedEntryInput[],
+  'data-analysis': dataAnalysisRaw as RecommendedEntryInput[],
+  'content-creation': contentCreationRaw as RecommendedEntryInput[],
+  'security-compliance': securityComplianceRaw as RecommendedEntryInput[],
+  'communication-collaboration': communicationCollaborationRaw as RecommendedEntryInput[],
+}
+
 function loadRecommendedShard(category: RecommendedCategory): RecommendedEntry[] {
-  const raw = JSON.parse(
-    readFileSync(new URL(`./${category}.json`, import.meta.url), 'utf-8'),
-  ) as RecommendedEntryInput[]
+  const raw = shardData[category]
 
   if (!Array.isArray(raw)) {
     throw new Error(`Recommended shard "${category}" must contain an array`)
