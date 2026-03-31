@@ -211,6 +211,61 @@ fn add_windows_git_paths(extra_paths: &mut Vec<String>, bash_path: &str) {
     push_if_exists(extra_paths, git_root.join("mingw64").join("bin"));
 }
 
+/// Kill any process occupying the given TCP port (Windows only).
+/// Prevents startup failures caused by zombie sidecar processes from a previous session.
+#[cfg(target_os = "windows")]
+fn kill_process_on_port(port: u16) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // Use netstat to find the PID listening on the target port
+    let output = match std::process::Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let addr_patterns = [
+        format!("127.0.0.1:{}", port),
+        format!("0.0.0.0:{}", port),
+    ];
+
+    let mut killed_pids = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        // Match lines with LISTENING state that contain our port
+        if !trimmed.contains("LISTENING") {
+            continue;
+        }
+        let has_match = addr_patterns.iter().any(|pat| trimmed.contains(pat.as_str()));
+        if !has_match {
+            continue;
+        }
+        // PID is the last whitespace-separated token
+        if let Some(pid_str) = trimmed.split_whitespace().last() {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                if pid > 0 && !killed_pids.contains(&pid) {
+                    killed_pids.insert(pid);
+                    log::warn!("Killing stale process {} occupying port {}", pid, port);
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .output();
+                }
+            }
+        }
+    }
+
+    if !killed_pids.is_empty() {
+        // Brief delay to let the OS release the port
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
 /// Spawn the sidecar backend
 #[allow(dead_code)]
 fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
@@ -222,6 +277,12 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         .and_then(|v| v.as_str().and_then(|s| s.parse::<u16>().ok()))
         .unwrap_or(62601);
     log::info!("Using port {} (from store or default)", port);
+
+    // Windows: kill any zombie process occupying the target port from a previous session.
+    // This is the #1 cause of "backend failed to start" on Windows — when the app crashes
+    // or is force-killed, taskkill cleanup may not run, leaving the old sidecar holding the port.
+    #[cfg(target_os = "windows")]
+    kill_process_on_port(port);
 
     // Model config (API Key, Base URL, Model ID) is now managed by the backend
     // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
@@ -356,6 +417,25 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                     if resources.exists() {
                         env_vars.push(("RESOURCES_DIR".into(), resources.to_string_lossy().to_string()));
                     }
+                }
+            }
+        }
+    }
+
+    // Ensure package.json exists next to the sidecar binary.
+    // pi-coding-agent reads package.json from dirname(process.execPath) at module
+    // load time to extract version and piConfig. Without it the sidecar crashes with ENOENT.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let pkg_json = exe_dir.join("package.json");
+            if !pkg_json.exists() {
+                let version = app.config().version.clone().unwrap_or_else(|| "1.0.0".into());
+                let content = format!(
+                    r#"{{"name":"youclaw","version":"{}","type":"module","private":true}}"#,
+                    version
+                );
+                if let Err(e) = std::fs::write(&pkg_json, content) {
+                    log::warn!("Failed to write package.json to {:?}: {}", pkg_json, e);
                 }
             }
         }

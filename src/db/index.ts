@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
@@ -170,8 +170,38 @@ export function initDatabase(): Database {
   const paths = getPaths()
   mkdirSync(dirname(paths.db), { recursive: true })
 
-  _db = new Database(paths.db)
-  _db.exec('PRAGMA journal_mode = WAL')
+  // Windows: stale WAL/SHM files from a force-killed previous session can cause
+  // "database is locked" or corruption errors. If the main .db exists but we can't
+  // open it, remove the WAL/SHM files and retry.
+  let retried = false
+  const tryOpen = (): Database => {
+    try {
+      const db = new Database(paths.db)
+      db.exec('PRAGMA journal_mode = WAL')
+      return db
+    } catch (err) {
+      if (retried || process.platform !== 'win32') throw err
+
+      // Clean up stale WAL/SHM lock files and retry once
+      retried = true
+      for (const suffix of ['-wal', '-shm']) {
+        const lockFile = paths.db + suffix
+        if (existsSync(lockFile)) {
+          try {
+            unlinkSync(lockFile)
+            getLogger().warn({ file: lockFile }, 'Removed stale SQLite lock file')
+          } catch {
+            // File may be locked by another process
+          }
+        }
+      }
+      const db = new Database(paths.db)
+      db.exec('PRAGMA journal_mode = WAL')
+      return db
+    }
+  }
+
+  _db = tryOpen()
   _db.exec('PRAGMA foreign_keys = ON')
   _db.exec(SCHEMA)
 

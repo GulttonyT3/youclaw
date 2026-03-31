@@ -222,6 +222,15 @@ async function main() {
 
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
+
+  // Windows: handle process exit event as a last-resort cleanup.
+  // On Windows, SIGTERM/SIGINT may not fire when the parent Tauri process
+  // is killed via taskkill /F. The 'exit' event is more reliable for cleanup.
+  if (process.platform === 'win32') {
+    process.on('exit', () => {
+      try { server.stop() } catch {}
+    })
+  }
 }
 
 function writeStartupCrashLog(errorText: string): void {
