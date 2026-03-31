@@ -79,7 +79,11 @@ function hasInitializedDataDir(dir: string): boolean {
   try {
     const stats = statSync(dir)
     if (!stats.isDirectory()) return true
-    return readdirSync(dir).length > 0
+    // Check for the database file as proof of actual data initialization.
+    // A directory with only leftover subdirectories (workspace/, skills/) from
+    // older versions should NOT be considered initialized — otherwise the
+    // migration from the legacy data dir would be incorrectly skipped.
+    return existsSync(resolve(dir, 'youclaw.db'))
   } catch {
     return false
   }
