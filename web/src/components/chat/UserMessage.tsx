@@ -111,6 +111,7 @@ export function UserMessage({ message }: { message: Message }) {
                     "[&_li]:py-0.5 [&_li]:[overflow-wrap:anywhere]",
                     "[&_hr]:my-3 [&_hr]:border-primary-foreground/25",
                     "[&_a]:text-primary-foreground [&_a]:underline [&_a]:underline-offset-4",
+                    "[&_[data-streamdown=link]]:text-primary-foreground [&_[data-streamdown=link]]:underline-offset-4",
                     "[&_code]:rounded-md [&_code]:bg-black/10 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.95em]",
                     "[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-black/10 [&_pre]:p-3",
                     "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
